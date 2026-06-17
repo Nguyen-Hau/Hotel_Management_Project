@@ -1,28 +1,22 @@
-const db = require("../../backend/config/db");
+const db = require("../config/db");
 
-// =====================
-// ADD SERVICE TO BOOKING
-// =====================
-exports.addService = (req, res) => {
+// Thêm dịch vụ vào đơn đặt phòng
+async function addService(req, res) {
   const { booking_id, service_id, quantity } = req.body;
 
-  db.query(
-    `INSERT INTO booking_services (booking_id, service_id, quantity)
-     VALUES (?, ?, ?)`,
-    [booking_id, service_id, quantity || 1],
-    (err) => {
-      if (err) 
-        return res.status(500).json(err); res.json({ 
-        message: "Thêm dịch vụ thành công" 
-      });
-    }
-  );
-};
+  try {
+    const sql = "INSERT INTO booking_services (booking_id, service_id, quantity) VALUES (?, ?, ?)";
+    const qty = quantity || 1;
+    
+    await db.query(sql, [booking_id, service_id, qty]);
+    return res.json({ message: "Thêm dịch vụ thành công" });
+  } catch (err) {
+    return res.status(500).json({ message: "Lỗi hệ thống khi thêm dịch vụ", error: err.message });
+  }
+}
 
-// =====================
-// GET SERVICES BY BOOKING
-// =====================
-exports.getByBooking = (req, res) => {
+// Lấy danh sách dịch vụ của một phòng
+async function getByBooking(req, res) {
   const booking_id = req.params.booking_id;
 
   const sql = `
@@ -36,23 +30,15 @@ exports.getByBooking = (req, res) => {
     WHERE bs.booking_id = ?
   `;
 
-  db.query(sql, [booking_id], (err, data) => {
-    if (err) 
-      return res.status(500).json(err); res.json(data);
-  });
-};
+  try {
+    const [data] = await db.query(sql, [booking_id]);
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ message: "Lỗi hệ thống khi tải dịch vụ phòng", error: err.message });
+  }
+}
 
-// =====================
-// DELETE SERVICE
-// =====================
-exports.remove = (req, res) => {
-  db.query(
-    "DELETE FROM booking_services WHERE id=?",
-    [req.params.id],
-    (err) => {
-      if (err) 
-        return res.status(500).json(err); res.json({ message: "Đã xóa dịch vụ" 
-      });
-    }
-  );
+module.exports = {
+  addService,
+  getByBooking
 };

@@ -1,151 +1,204 @@
 const db = require('../config/db');
 
-// Helper handle lỗi để không phải viết console.error lặp đi lặp lại
-const handleError = (res, msg, err) => (console.error(msg, err), res.status(500).json({ message: msg + (err.message ? ': ' + err.message : '') }));
+// Hàm bổ trợ in lỗi viết dạng function truyền thống
+function errRes(res, msg, err) {
+    console.error(msg, err);
+    let chiTietLoi = '';
+    if (err && err.message) {
+        chiTietLoi = ': ' + err.message;
+    }
+    return res.status(500).json({ message: msg + chiTietLoi });
+}
 
-exports.getAll = async (req, res) => {
+// 1. Lấy danh sách đặt phòng
+async function getAll(req, res) {
     try {
-        let sql = `SELECT b.*, c.full_name as customer_name, c.phone, r.room_number, r.price as room_price FROM bookings b JOIN customers c ON b.customer_id = c.customer_id JOIN rooms r ON b.room_id = r.room_id`;
-        const params = req.user.role === 'customer' ? [req.user.id] : [];
-        if (params.length) sql += " WHERE b.customer_id = ?";
-        const [bookings] = await db.query(sql + " ORDER BY b.booking_id DESC", params);
+        let sql = 'SELECT b.*, c.full_name as customer_name, r.room_number, r.price as room_price, r.room_type FROM bookings b JOIN customers c ON b.customer_id = c.customer_id JOIN rooms r ON b.room_id = r.room_id';
+        const params = [];
+        
+        if (req.user.role === 'customer') {
+            params.push(req.user.id);
+            sql += ' WHERE b.customer_id = ?';
+        }
+        
+        const [bookings] = await db.query(sql + ' ORDER BY b.booking_id DESC', params);
+        
+        for (let b of bookings) {
+            const [inv] = await db.query('SELECT total_amount FROM invoices WHERE booking_id = ?', [b.booking_id]);
+            if (inv.length > 0) {
+                b.total_amount = inv[0].total_amount;
+            } else {
+                b.total_amount = 0;
+            }
+        }
         return res.json(bookings);
     } catch (err) { 
-        return handleError(res, 'Lỗi khi lấy danh sách đặt phòng', err); 
+        return errRes(res, 'Lỗi lấy danh sách đặt phòng', err); 
     }
-};
+}
 
-exports.getById = async (req, res) => {
+// 2. Lấy chi tiết đặt phòng bằng ID
+async function getById(req, res) {
     try {
-        const [rows] = await db.query(`SELECT b.*, c.full_name as customer_name, c.email, c.phone, r.room_number, r.price as room_price FROM bookings b JOIN customers c ON b.customer_id = c.customer_id JOIN rooms r ON b.room_id = r.room_id WHERE b.booking_id = ?`, [req.params.id]);
-        return rows.length ? res.json(rows[0]) : res.status(404).json({ message: 'Không tìm thấy đặt phòng' });
+        const [b] = await db.query('SELECT b.*, c.full_name as customer_name, c.email, c.phone, r.room_number, r.price as room_price, r.room_type FROM bookings b JOIN customers c ON b.customer_id = c.customer_id JOIN rooms r ON b.room_id = r.room_id WHERE b.booking_id = ?', [req.params.id]);
+        
+        if (b.length === 0) {
+            return res.status(404).json({ message: 'Không tìm thấy đơn đặt phòng' });
+        }
+        if (req.user.role === 'customer' && b[0].customer_id !== req.user.id) {
+            return res.status(403).json({ message: 'Không có quyền xem thông tin này' });
+        }
+        return res.json(b[0]);
     } catch (err) { 
-        return handleError(res, 'Lỗi khi lấy thông tin đặt phòng', err); 
+        return errRes(res, 'Lỗi lấy chi tiết đặt phòng', err); 
     }
-};
+}
 
-exports.create = async (req, res) => {
+// 3. Tạo đơn đặt phòng mới
+async function create(req, res) {
     const conn = await db.getConnection();
     try {
         await conn.beginTransaction();
-        let { customer_id, room_id, check_in, check_out, total_nights } = req.body;
-        if (req.user.role === 'customer') customer_id = req.user.id;
+        let room_id = req.body.room_id;
+        let check_in = req.body.check_in;
+        let check_out = req.body.check_out;
+        
+        let customer_id = req.body.customer_id;
+        if (req.user.role === 'customer') {
+            customer_id = req.user.id;
+        }
 
-        const [rooms] = await conn.query('SELECT status FROM rooms WHERE room_id = ?', [room_id]);
-        if (!rooms.length || rooms[0].status !== 'available') 
-            return await conn.rollback(), res.status(400).json({ message: 'Phòng không trống hoặc không tồn tại' 
-        });
+        if (!customer_id) {
+            await conn.rollback();
+            return res.status(400).json({ message: 'Thiếu thông tin khách hàng' });
+        }
 
-        total_nights = total_nights || (check_in && check_out ? Math.max(1, Math.ceil((new Date(check_out) - new Date(check_in)) / 86400000)) : 1);
+        const [rm] = await conn.query('SELECT status, room_number FROM rooms WHERE room_id = ?', [room_id]);
+        if (rm.length === 0) {
+            await conn.rollback();
+            return res.status(404).json({ message: 'Phòng không tồn tại' });
+        }
+        if (rm[0].status !== 'available') {
+            await conn.rollback();
+            return res.status(400).json({ message: 'Phòng ' + rm[0].room_number + ' đang bận' });
+        }
 
-        const [result] = await conn.query(
-            `INSERT INTO bookings (customer_id, room_id, check_in, check_out, total_nights, status) 
-            VALUES (?, ?, ?, ?, ?, 'booked')`, 
-            [customer_id, room_id, check_in, check_out, total_nights]
-        );
-        await conn.query("UPDATE rooms SET status = 'booked' WHERE room_id = ?", [room_id]);
+        let nights = null;
+        if (check_in && check_out) {
+            nights = Math.max(1, Math.ceil((new Date(check_out) - new Date(check_in)) / 86400000));
+        }
+
+        const [r] = await conn.query('INSERT INTO bookings (customer_id, room_id, check_in, check_out, total_nights, status) VALUES (?, ?, ?, ?, ?, "booked")', [customer_id, room_id, check_in, check_out || null, nights]);
+        await conn.query('UPDATE rooms SET status = "booked" WHERE room_id = ?', [room_id]);
         
         await conn.commit();
-        return res.json({ 
-            success: true, 
-            message: 'Đặt phòng thành công', 
-            booking_id: result.insertId });
+        return res.json({ success: true, message: 'Đặt phòng thành công', booking_id: r.insertId });
     } catch (err) { 
-        return await conn.rollback(), 
-        handleError(res, 'Lỗi khi đặt phòng', err); 
+        await conn.rollback(); 
+        return errRes(res, 'Lỗi khi đặt phòng', err); 
     } finally { 
         conn.release(); 
     }
-};
+}
 
-exports.checkIn = async (req, res) => {
+// 4. Xử lý Check-in nhận phòng
+async function checkIn(req, res) {
     try {
-        const [resB] = await db.query("UPDATE bookings SET status = 'checked_in' WHERE booking_id = ?", [req.params.id]);
-        if (!resB.affectedRows) return res.status(404).json({ message: 'Không tìm thấy đặt phòng' });
-        await db.query("UPDATE rooms SET status = 'checked_in' WHERE room_id = (SELECT room_id FROM bookings WHERE booking_id = ?)", [req.params.id]);
-        return res.json({ 
-            success: true, 
-            message: 'Check-in thành công' 
-        });
-    } catch (err) { 
-        return handleError(res, 'Lỗi khi check-in', err); 
-    }
-};
+        const [b] = await db.query('SELECT room_id, status FROM bookings WHERE booking_id = ?', [req.params.id]);
+        if (b.length === 0) {
+            return res.status(404).json({ message: 'Không tìm thấy đơn đặt phòng' });
+        }
+        if (b[0].status !== 'booked') {
+            return res.status(400).json({ message: 'Không thể check-in phòng này (trạng thái sai)' });
+        }
 
-exports.checkOut = async (req, res) => {
+        await db.query('UPDATE bookings SET status = "checked_in" WHERE booking_id = ?', [req.params.id]);
+        await db.query('UPDATE rooms SET status = "checked_in" WHERE room_id = ?', [b[0].room_id]);
+        return res.json({ success: true, message: 'Check-in thành công' });
+    } catch (err) { 
+        return errRes(res, 'Lỗi thực hiện check-in', err); 
+    }
+}
+
+// 5. Xử lý Check-out trả phòng & Tính hóa đơn
+async function checkOut(req, res) {
     const conn = await db.getConnection();
     try {
         await conn.beginTransaction();
-        const [bookings] = await conn.query(
-            `SELECT b.*, r.price as room_price, r.room_id 
-            FROM bookings b 
-            JOIN rooms r ON b.room_id = r.room_id 
-            WHERE b.booking_id = ?`, 
-            [req.params.id]
-        );
-        if (!bookings.length) return await conn.rollback(), res.status(404).json({ message: 'Không tìm thấy đặt phòng' });
+        const [b] = await conn.query('SELECT b.*, r.price as room_price, r.room_id FROM bookings b JOIN rooms r ON b.room_id = r.room_id WHERE b.booking_id = ?', [req.params.id]);
+        
+        if (b.length === 0) {
+            await conn.rollback();
+            return res.status(404).json({ message: 'Không tìm thấy đơn đặt phòng' });
+        }
+        if (b[0].status !== 'checked_in') {
+            await conn.rollback();
+            return res.status(400).json({ message: 'Chỉ có thể check-out phòng đang ở' });
+        }
 
-        const { room_id, check_in, check_out, total_nights, room_price } = bookings[0];
-        const nights = total_nights || Math.max(1, Math.ceil((new Date(check_out || new Date()) - new Date(check_in)) / 86400000));
-        const roomAmount = nights * room_price;
+        let nights = b[0].total_nights;
+        if (!nights) {
+            let outDate = b[0].check_out ? new Date(b[0].check_out) : new Date();
+            nights = Math.max(1, Math.ceil((outDate - new Date(b[0].check_in)) / 86400000));
+        }
 
-        const [services] = await conn.query(
-            `SELECT IFNULL(SUM(s.price * bs.quantity), 0) as total 
-            FROM booking_services bs 
-            JOIN services s ON bs.service_id = s.service_id 
-            WHERE bs.booking_id = ?`, 
-            [req.params.id]
-        );
-        const totalAmount = roomAmount + services[0].total;
+        const [svs] = await conn.query('SELECT IFNULL(SUM(s.price * bs.quantity), 0) as total FROM booking_services bs JOIN services s ON bs.service_id = s.service_id WHERE bs.booking_id = ?', [req.params.id]);
+        
+        let rmAmt = nights * b[0].room_price;
+        let svAmt = Number(svs[0].total);
+        let total = rmAmt + svAmt;
 
-        await conn.query("UPDATE bookings SET status = 'checked_out' WHERE booking_id = ?", [req.params.id]);
-        await conn.query("UPDATE rooms SET status = 'available' WHERE room_id = ?", [room_id]);
-        const [invoice] = await conn.query(
-            `INSERT INTO invoices (booking_id, room_amount, service_amount, total_amount, status, payment_method) 
-            VALUES (?, ?, ?, ?, 'unpaid', ?)`, 
-            [req.params.id, roomAmount, services[0].total, totalAmount, req.body.payment_method || null]
-        );
+        await conn.query('UPDATE bookings SET status = "checked_out", total_nights = ? WHERE booking_id = ?', [nights, req.params.id]);
+        await conn.query('UPDATE rooms SET status = "available" WHERE room_id = ?', [b[0].room_id]);
+
+        const [existInv] = await conn.query('SELECT invoice_id FROM invoices WHERE booking_id = ?', [req.params.id]);
+        let invId = null;
+        if (existInv.length > 0) {
+            invId = existInv[0].invoice_id;
+            await conn.query('UPDATE invoices SET room_amount = ?, service_amount = ?, total_amount = ? WHERE booking_id = ?', [rmAmt, svAmt, total, req.params.id]);
+        } else {
+            const [insertRes] = await conn.query('INSERT INTO invoices (booking_id, room_amount, service_amount, total_amount, status) VALUES (?, ?, ?, ?, "unpaid")', [req.params.id, rmAmt, svAmt, total]);
+            invId = insertRes.insertId;
+        }
 
         await conn.commit();
-        return res.json({ 
-            success: true, 
-            message: 'Check-out thành công', 
-            invoice_id: invoice.insertId, roomAmount, 
-            serviceAmount: services[0].total, totalAmount 
-        });
-    } catch (err) {
-        return await conn.rollback(), handleError(res, 'Lỗi khi check-out', err); 
+        return res.json({ success: true, message: 'Check-out thành công', invoice_id: invId, total: total });
+    } catch (err) { 
+        await conn.rollback(); 
+        return errRes(res, 'Lỗi khi thực hiện check-out', err); 
     } finally { 
         conn.release(); 
     }
-};
+}
 
-exports.cancel = async (req, res) => {
+// 6. Hủy đơn đặt phòng
+async function cancel(req, res) {
     try {
-        const [bookings] = await db.query(
-            'SELECT room_id, status FROM bookings WHERE booking_id = ?', 
-            [req.params.id]
-        );
-        if (!bookings.length) 
-            return res.status(404).json({ message: 'Không tìm thấy đặt phòng' 
-        });
-        if (bookings[0].status !== 'booked') 
-            return res.status(400).json({ message: 'Chỉ có thể hủy đặt phòng ở trạng thái đã đặt' 
-        });
+        const [b] = await db.query('SELECT room_id, status, customer_id FROM bookings WHERE booking_id = ?', [req.params.id]);
+        if (b.length === 0) {
+            return res.status(404).json({ message: 'Không tìm thấy đơn đặt phòng' });
+        }
+        if (req.user.role === 'customer' && b[0].customer_id !== req.user.id) {
+            return res.status(403).json({ message: 'Không có quyền hủy phòng của người khác' });
+        }
+        if (b[0].status !== 'booked') {
+            return res.status(400).json({ message: 'Chỉ được phép hủy phòng khi đang ở trạng thái đã đặt' });
+        }
 
-        await db.query("UPDATE bookings SET status = 'cancelled' WHERE booking_id = ?", [req.params.id]);
-        await db.query("UPDATE rooms SET status = 'available' WHERE room_id = ?", [bookings[0].room_id]);
+        await db.query('UPDATE bookings SET status = "cancelled" WHERE booking_id = ?', [req.params.id]);
+        await db.query('UPDATE rooms SET status = "available" WHERE room_id = ?', [b[0].room_id]);
         return res.json({ success: true, message: 'Hủy đặt phòng thành công' });
     } catch (err) { 
-        return handleError(res, 'Lỗi khi hủy đặt phòng', err); 
+        return errRes(res, 'Lỗi khi hủy đặt phòng', err); 
     }
-};
+}
 
-exports.remove = async (req, res) => {
-    try {
-        const [result] = await db.query("DELETE FROM bookings WHERE booking_id = ?", [req.params.id]);
-        return result.affectedRows ? res.json({ success: true, message: 'Xóa đặt phòng thành công' }) : res.status(404).json({ message: 'Không tìm thấy đặt phòng' });
-    } catch (err) { 
-        return handleError(res, 'Lỗi khi xóa đặt phòng', err); 
-    }
+// Đồng bộ xuất module giống hoàn toàn file users.controller.js
+module.exports = {
+    getAll,
+    getById,
+    create,
+    checkIn,
+    checkOut,
+    cancel
 };

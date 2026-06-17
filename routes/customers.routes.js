@@ -1,66 +1,115 @@
-const router = require('express').Router(), { verifyToken, ROLES, requireRole } = require('../middleware/auth'), db = require('../config/db');
+const express = require('express');
+const router = express.Router();
+const authMiddleware = require('../middleware/auth');
+const db = require('../config/db');
 
-const errRes = (res, err) => (console.error(err), res.status(500).json({ message: err.message }));
-const authRoles = requireRole([...ROLES.STAFF, ...ROLES.CUSTOMER]);
+// Hàm bổ trợ thông báo lỗi hệ thống
+function sendErrorResponse(res, err) {
+    console.error(err);
+    return res.status(500).json({ 
+        message: err.message 
+    });
+}
 
-// ==================== CONTROLLERS ====================
-const getAll = async (req, res) => {
+// Tạo mảng phân quyền cho các chức năng thông thường
+const VIEW_ROLES = authMiddleware.ROLES.STAFF.concat(authMiddleware.ROLES.CUSTOMER);
+
+// ==================== CHỨC NĂNG CONTROLLERS ====================\r
+
+// 1. Lấy tất cả hoặc chi tiết bản thân khách hàng
+async function getAllCustomers(req, res) {
     try {
         let sql = 'SELECT customer_id, full_name, email, phone, cccd, created_at FROM customers';
-        const params = req.user.role === 'customer' ? [req.user.id] : [];
-        if (params.length) sql += ' WHERE customer_id = ?';
+        let params = [];
+
+        if (req.user.role === 'customer') {
+            sql = sql + ' WHERE customer_id = ?';
+            params.push(req.user.id);
+        }
         
-        const [rows] = await db.query(sql + ' ORDER BY customer_id DESC', params);
+        sql = sql + ' ORDER BY customer_id DESC';
+        const [rows] = await db.query(sql, params);
         return res.json(rows);
-    } catch (err) { return errRes(res, err); }
-};
+    } catch (err) { 
+        return sendErrorResponse(res, err); 
+    }
+}
 
-const getById = async (req, res) => {
+// 2. Lấy thông tin khách hàng theo ID cụ thể
+async function getCustomerById(req, res) {
     try {
-        const [rows] = await db.query('SELECT customer_id, full_name, email, phone, cccd, created_at FROM customers WHERE customer_id = ?', [req.params.id]);
-        if (!rows.length) return res.status(404).json({ message: 'Không tìm thấy khách hàng' });
-        if (req.user.role === 'customer' && rows[0].customer_id != req.user.id) return res.status(403).json({ message: 'Không có quyền xem thông tin này' });
+        const customerId = req.params.id;
+        const [rows] = await db.query('SELECT customer_id, full_name, email, phone, cccd, created_at FROM customers WHERE customer_id = ?', [customerId]);
+        
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Không tìm thấy khách hàng' });
+        }
+
+        if (req.user.role === 'customer') {
+            if (rows[0].customer_id != req.user.id) {
+                return res.status(403).json({ message: 'Không có quyền truy cập thông tin khách hàng này' });
+            }
+        }
+
         return res.json(rows[0]);
-    } catch (err) { return errRes(res, err); }
-};
+    } catch (err) { 
+        return sendErrorResponse(res, err); 
+    }
+}
 
-const create = async (req, res) => {
+// 3. Cập nhật thông tin khách hàng
+async function updateCustomer(req, res) {
     try {
-        const { full_name, email, phone, cccd, password } = req.body;
-        const [exist] = await db.query('SELECT 1 FROM customers WHERE email = ? OR phone = ?', [email, phone]);
-        if (exist.length) return res.status(400).json({ message: 'Email hoặc số điện thoại đã tồn tại' });
+        const customerId = req.params.id;
+        const full_name = req.body.full_name;
+        const email = req.body.email;
+        const phone = req.body.phone;
+        const cccd = req.body.cccd;
+        const password = req.body.password;
 
-        const [r] = await db.query('INSERT INTO customers (full_name, email, phone, cccd, password, role) VALUES (?, ?, ?, ?, ?, "customer")', [full_name, email, phone, cccd, password || '123456']);
-        return res.json({ success: true, message: 'Thêm khách hàng thành công', id: r.insertId });
-    } catch (err) { return errRes(res, err); }
-};
+        if (req.user.role === 'customer') {
+            if (customerId != req.user.id) {
+                return res.status(403).json({ message: 'Không có quyền sửa thông tin này' });
+            }
+        }
 
-const update = async (req, res) => {
-    try {
-        const { full_name, email, phone, cccd, password } = req.body;
-        if (req.user.role === 'customer' && req.params.id != req.user.id) return res.status(403).json({ message: 'Không có quyền sửa thông tin này' });
+        let sql = 'UPDATE customers SET full_name = ?, email = ?, phone = ?, cccd = ?';
+        let params = [full_name, email, phone, cccd];
 
-        let sql = 'UPDATE customers SET full_name = ?, email = ?, phone = ?, cccd = ?', params = [full_name, email, phone, cccd];
-        if (password) (sql += ', password = ?', params.push(password));
+        if (password) {
+            sql = sql + ', password = ?';
+            params.push(password);
+        }
 
-        await db.query(sql + ' WHERE customer_id = ?', [...params, req.params.id]);
+        sql = sql + ' WHERE customer_id = ?';
+        params.push(customerId);
+
+        await db.query(sql, params);
         return res.json({ success: true, message: 'Cập nhật khách hàng thành công' });
-    } catch (err) { return errRes(res, err); }
-};
+    } catch (err) { 
+        return sendErrorResponse(res, err); 
+    }
+}
 
-const remove = async (req, res) => {
+// 4. Xóa tài khoản khách hàng
+async function removeCustomer(req, res) {
     try {
-        if (req.user.role !== 'Giám đốc') return res.status(403).json({ message: 'Không có quyền xóa khách hàng' });
-        await db.query('DELETE FROM customers WHERE customer_id = ?', [req.params.id]);
+        if (req.user.role !== 'Giám đốc') {
+            return res.status(403).json({ message: 'Không có quyền xóa khách hàng' });
+        }
+        
+        const customerId = req.params.id;
+        await db.query('DELETE FROM customers WHERE customer_id = ?', [customerId]);
         return res.json({ success: true, message: 'Xóa khách hàng thành công' });
-    } catch (err) { return errRes(res, err); }
-};
+    } catch (err) { 
+        return sendErrorResponse(res, err); 
+    }
+}
 
-// ==================== ROUTES ====================
-router.get('/', verifyToken, authRoles, getAll);
-router.get('/:id', verifyToken, authRoles, getById);
-router.post('/', verifyToken, requireRole(ROLES.STAFF), create);
-router.put('/:id', verifyToken, authRoles, update);
-router.delete('/:id', verifyToken, requireRole(ROLES.ADMIN), remove);
+// ==================== ĐỊNH TUYẾN ROUTES ====================\r
+router.get('/', authMiddleware.verifyToken, authMiddleware.requireRole(VIEW_ROLES), getAllCustomers);
+router.get('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(VIEW_ROLES), getCustomerById);
+router.put('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(VIEW_ROLES), updateCustomer);
+router.delete('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), removeCustomer);
 
 module.exports = router;

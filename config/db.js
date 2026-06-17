@@ -1,30 +1,39 @@
-const mysql = require('mysql2'), 
-pool = mysql.createPool({
+const mysql = require('mysql2');
+
+const pool = mysql.createPool({
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '123456',
     database: process.env.DB_NAME || 'hotel_db',
-    waitForConnections: true, 
-    connectionLimit: 10, 
+    waitForConnections: true,
+    connectionLimit: 10,
     queueLimit: 0
 });
 
-// Tự động cấu hình sql_mode trên 1 dòng
-pool.on('connection', connection => 
-    connection.query("SET SESSION sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''))")
-);
+// Cấu hình sql_mode khi có kết nối mới
+pool.on('connection', function(connection) {
+    connection.query("SET SESSION sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''))");
+});
 
 const db = pool.promise();
 
-// Kiểm tra kết nối siêu tốc
-(async () => {
+// Hàm kiểm tra kết nối cơ sở dữ liệu
+async function testConnection() {
     try {
-        const [r, emp] = await Promise.all([db.query('SELECT 1'), 
-            db.query('SELECT * FROM employees')]);
-        console.log(`✅ MySQL connected successfully\n📊 Employees in database: ${emp[0].length}`);
-    } catch (err) { 
-        console.error('❌ MySQL connection error:', err.message); 
+        await db.query('SELECT 1');
+        
+        // Viết tường minh, không dùng destructuring mảng lồng nhau
+        const result = await db.query('SELECT * FROM employees');
+        const empRows = result[0];
+        
+        console.log('Ket noi MySQL thanh cong!');
+        console.log('So luong nhan vien trong db: ' + empRows.length);
+    } catch (err) {
+        console.error('Loi ket noi MySQL:', err.message);
     }
-})();
+}
+
+// Chạy hàm kiểm tra luôn
+testConnection();
 
 module.exports = db;

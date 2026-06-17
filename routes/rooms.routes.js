@@ -1,19 +1,29 @@
-const router = require('express').Router();
+const express = require('express');
+const router = express.Router();
 const multer = require('multer');
-const { verifyToken, ROLES, requireRole } = require('../middleware/auth');
-const { getAll, getById, create, update, remove } = require('../controllers/rooms.controller');
+const authMiddleware = require('../middleware/auth');
+const roomsController = require('../controllers/rooms.controller');
 
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
-    filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
+    destination: function(req, file, cb) {
+        cb(null, 'uploads/');
+    },
+    filename: function(req, file, cb) {
+        cb(null, Date.now() + '-' + file.originalname);
+    }
 });
-const upload = multer({ storage });
 
-// Cho phép customer xem danh sách phòng
-router.get('/', verifyToken, requireRole([...ROLES.STAFF, ...ROLES.CUSTOMER]), getAll);
-router.get('/:id', verifyToken, requireRole([...ROLES.STAFF, ...ROLES.CUSTOMER]), getById);
-router.post('/', verifyToken, requireRole(ROLES.STAFF), upload.single('image'), create);
-router.put('/:id', verifyToken, requireRole(ROLES.STAFF), upload.single('image'), update);
-router.delete('/:id', verifyToken, requireRole(ROLES.ADMIN), remove);
+const upload = multer({ storage: storage });
+
+// Gộp các quyền dành cho chức năng xem phòng
+const VIEW_ROLES = authMiddleware.ROLES.STAFF.concat(authMiddleware.ROLES.CUSTOMER);
+
+router.get('/', authMiddleware.verifyToken, authMiddleware.requireRole(VIEW_ROLES), roomsController.getAll);
+router.get('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(VIEW_ROLES), roomsController.getById);
+
+// Các chức năng quản trị phòng dành riêng cho nhân viên/admin
+router.post('/', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), upload.single('image'), roomsController.create);
+router.put('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), upload.single('image'), roomsController.update);
+router.delete('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.ADMIN), roomsController.remove);
 
 module.exports = router;

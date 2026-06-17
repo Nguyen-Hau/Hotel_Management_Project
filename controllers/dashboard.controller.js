@@ -1,41 +1,74 @@
 const db = require('../config/db');
 
-const errRes = (res, msg, err) => (console.error(msg, err), res.status(500).json({ message: msg, error: err.message }));
+// Hàm bổ trợ in lỗi viết dạng function truyền thống
+function errRes(res, msg, err) {
+    console.error(msg, err);
+    let chiTietLoi = '';
+    if (err && err.message) {
+        chiTietLoi = ': ' + err.message;
+    }
+    return res.status(500).json({ message: msg + chiTietLoi });
+}
 
-exports.getDashboard = async (req, res) => {
+// 1. Lấy dữ liệu tổng hợp Dashboard
+async function getDashboard(req, res) {
     try {
-        const role = req.user.role, cId = req.user.id;
+        const role = req.user.role;
+        const cId = req.user.id;
         const isStaff = ['Giám đốc', 'Quản lý', 'Lễ tân'].includes(role);
 
-        // 1. Gộp toàn bộ 6 câu lệnh đếm phòng và khách hàng vào 1 truy vấn duy nhất
-        const [[counts]] = await db.query(`
-            SELECT 
-                COUNT(*) as totalRooms,
-                SUM(status = 'available') as availableRooms,
-                SUM(status = 'checked_in') as occupiedRooms,
-                SUM(status = 'booked') as bookedRooms,
-                SUM(status = 'maintenance') as maintenanceRooms,
-                AVG(price) as avgPrice,
-                (SELECT COUNT(*) FROM customers) as totalCustomers,
-                (SELECT COUNT(DISTINCT customer_id) FROM bookings WHERE status = 'checked_in') as currentGuests
-            FROM rooms
-        `);
+        const [resTotal] = await db.query('SELECT COUNT(*) as total FROM rooms');
+        const [resAvail] = await db.query("SELECT COUNT(*) as total FROM rooms WHERE status = 'available'");
+        const [resOcc] = await db.query("SELECT COUNT(*) as total FROM rooms WHERE status = 'checked_in'");
+        const [resBooked] = await db.query("SELECT COUNT(*) as total FROM rooms WHERE status = 'booked'");
+        const [resMaint] = await db.query("SELECT COUNT(*) as total FROM rooms WHERE status = 'maintenance'");
+        const [resPrice] = await db.query('SELECT AVG(price) as avgPrice FROM rooms');
+        
+        const [resCust] = await db.query('SELECT COUNT(*) as total FROM customers');
+        const [resCurrent] = await db.query("SELECT COUNT(DISTINCT customer_id) as total FROM bookings WHERE status = 'checked_in'");
 
-        // 2. Gộp thống kê doanh thu hôm nay và tháng này vào làm 1 truy vấn
-        const [[rev]] = await db.query(`
-            SELECT 
-                SUM(CASE WHEN DATE(created_at) = CURDATE() THEN total_amount ELSE 0 END) as todayRevenue,
-                SUM(CASE WHEN MONTH(created_at) = MONTH(CURDATE()) AND YEAR(created_at) = YEAR(CURDATE()) THEN total_amount ELSE 0 END) as monthRevenue
-            FROM invoices WHERE status = 'paid'
-        `);
+        // Xử lý lấy ngày tháng năm hiện hành để tránh lệch múi giờ database
+        const bayGio = new Date();
+        const nam = bayGio.getFullYear();
+        const thang = String(bayGio.getMonth() + 1).padStart(2, '0');
+        const ngay = String(bayGio.getDate()).padStart(2, '0');
+        const chuoiNgayHomNay = nam + '-' + thang + '-' + ngay; 
 
-        // Khởi tạo object stats dựa trên kết quả gộp dữ liệu
+        const [resRevToday] = await db.query(
+            "SELECT SUM(total_amount) as total FROM invoices WHERE status = 'paid' AND (DATE(created_at) = ? OR DATE(paid_at) = ?)", 
+            [chuoiNgayHomNay, chuoiNgayHomNay]
+        );
+        
+        const [resRevMonth] = await db.query(
+            "SELECT SUM(total_amount) as total FROM invoices WHERE status = 'paid' AND MONTH(created_at) = ? AND YEAR(created_at) = ?", 
+            [...[Number(thang), nam]]
+        );
+
+        const totalRooms = resTotal[0].total;
+        const occupiedRooms = resOcc[0].total;
+        const bookedRooms = resBooked[0].total;
+        const avgPrice = Math.round(resPrice[0].avgPrice) || 0;
+
+        let occupancyRate = 0;
+        if (totalRooms > 0) {
+            occupancyRate = Math.round(((occupiedRooms + bookedRooms) / totalRooms) * 100);
+        }
+
         let stats = {
-            ...counts, todayRevenue: rev.todayRevenue || 0, monthRevenue: rev.monthRevenue || 0, avgPrice: Math.round(counts.avgPrice) || 0,
-            occupancyRate: counts.totalRooms > 0 ? Math.round(((counts.occupiedRooms + counts.bookedRooms) / counts.totalRooms) * 100) : 0
+            totalRooms: totalRooms,
+            availableRooms: resAvail[0].total,
+            occupiedRooms: occupiedRooms,
+            bookedRooms: bookedRooms,
+            maintenanceRooms: resMaint[0].total,
+            avgPrice: avgPrice,
+            totalCustomers: resCust[0].total,
+            currentGuests: resCurrent[0].total,
+            todayRevenue: resRevToday[0].total || 0,
+            monthRevenue: resRevMonth[0].total || 0,
+            occupancyRate: occupancyRate
         };
 
-        // ========== Xử lý phần dữ liệu của STAFF ==========
+        // ========== Xử lý phần dữ liệu biểu đồ của STAFF ==========
         if (isStaff) {
             const [trend] = await db.query(
                 `SELECT DATE_FORMAT(created_at, '%m/%Y') as label, 
@@ -44,12 +77,14 @@ exports.getDashboard = async (req, res) => {
                 GROUP BY DATE_FORMAT(created_at, '%Y-%m') 
                 ORDER BY MIN(created_at) LIMIT 6`
             );
-            const [[structure]] = await db.query(
+            
+            const [structure] = await db.query(
                 `SELECT 
                     IFNULL(SUM(room_amount), 0) as room, 
                     IFNULL(SUM(service_amount), 0) as service 
                 FROM invoices WHERE status = 'paid'`
             );
+            
             const [occMonth] = await db.query(
                 `SELECT 
                     DATE_FORMAT(b.check_in, '%m/%Y') as month, 
@@ -59,12 +94,14 @@ exports.getDashboard = async (req, res) => {
                 GROUP BY DATE_FORMAT(b.check_in, '%Y-%m') 
                 ORDER BY MIN(b.check_in) LIMIT 6`
             );
+            
             const [roomType] = await db.query(
                 `SELECT r.room_type as type, COUNT(b.booking_id) as count 
                 FROM rooms r 
                 LEFT JOIN bookings b ON r.room_id = b.room_id 
                 GROUP BY r.room_type ORDER BY count DESC`
             );
+            
             const [bookTrend] = await db.query(
                 `SELECT 
                     DATE_FORMAT(created_at, '%m/%Y') as month, 
@@ -74,6 +111,7 @@ exports.getDashboard = async (req, res) => {
                 GROUP BY DATE_FORMAT(created_at, '%Y-%m') 
                 ORDER BY MIN(created_at) LIMIT 6`
             );
+            
             const [national] = await db.query(
                 `SELECT 
                     CASE 
@@ -87,35 +125,66 @@ exports.getDashboard = async (req, res) => {
                 ORDER BY count DESC LIMIT 5`
             );
 
-            Object.assign(stats, {
-                revenueTrend: trend, roomRevenue: structure.room, serviceRevenue: structure.service, roomTypePopularity: roomType, bookingTrend: bookTrend, topNationalities: national,
-                occupancyByMonth: occMonth.map(i => ({ month: i.month, rate: Math.round((i.occ / i.total) * 100) }))
-            });
+            const listOccupancy = [];
+            for (let i = 0; i < occMonth.length; i++) {
+                listOccupancy.push({
+                    month: occMonth[i].month,
+                    rate: Math.round((occMonth[i].occ / occMonth[i].total) * 100)
+                });
+            }
+
+            stats.revenueTrend = trend;
+            stats.roomRevenue = structure[0].room;
+            stats.serviceRevenue = structure[0].service;
+            stats.roomTypePopularity = roomType;
+            stats.bookingTrend = bookTrend;
+            stats.topNationalities = national;
+            stats.occupancyByMonth = listOccupancy;
         }
 
         // ========== Xử lý phần dữ liệu của CUSTOMER ==========
         if (role === 'customer') {
-            const [[cust]] = await db.query(`
+            const [custRows] = await db.query(`
                 SELECT 
                     COUNT(*) as myBookings,
                     SUM(CASE WHEN i.status = 'unpaid' THEN 1 ELSE 0 END) as unpaidInvoices,
                     SUM(CASE WHEN i.status = 'paid' THEN i.total_amount ELSE 0 END) as totalSpent
-                FROM bookings b LEFT JOIN invoices i ON b.booking_id = i.booking_id WHERE b.customer_id = ?
+                FROM bookings b 
+                LEFT JOIN invoices i ON b.booking_id = i.booking_id 
+                WHERE b.customer_id = ?
             `, [cId]);
-            Object.assign(stats, { myBookings: cust.myBookings, unpaidInvoices: cust.unpaidInvoices, totalSpent: cust.totalSpent || 0 });
+            
+            const cust = custRows[0];
+            stats.myBookings = cust.myBookings;
+            stats.unpaidInvoices = cust.unpaidInvoices;
+            stats.totalSpent = cust.totalSpent || 0;
         }
 
         return res.json(stats);
     } catch (err) { 
         return errRes(res, 'Lỗi khi lấy dữ liệu dashboard', err);
     }
-};
+}
 
-exports.getRecentActivities = async (req, res) => {
+// 2. Lấy danh sách các hoạt động đặt phòng gần đây
+async function getRecentActivities(req, res) {
     try {
-        const [rows] = await db.query(`SELECT b.*, c.full_name as customer_name, c.phone, r.room_number, r.room_type, COALESCE(i.total_amount, 0) as total_amount FROM bookings b JOIN customers c ON b.customer_id = c.customer_id JOIN rooms r ON b.room_id = r.room_id LEFT JOIN invoices i ON b.booking_id = i.booking_id ORDER BY b.created_at DESC LIMIT 50`);
+        const [rows] = await db.query(`
+            SELECT b.*, c.full_name as customer_name, c.phone, r.room_number, r.room_type, COALESCE(i.total_amount, 0) as total_amount 
+            FROM bookings b 
+            JOIN customers c ON b.customer_id = c.customer_id 
+            JOIN rooms r ON b.room_id = r.room_id 
+            LEFT JOIN invoices i ON b.booking_id = i.booking_id 
+            ORDER BY b.created_at DESC LIMIT 50
+        `);
         return res.json(rows);
     } catch (err) { 
         return errRes(res, 'Lỗi khi lấy hoạt động gần đây', err); 
     }
+}
+
+// Đồng bộ xuất module giống hoàn toàn file users.controller.js
+module.exports = {
+    getDashboard,
+    getRecentActivities
 };
