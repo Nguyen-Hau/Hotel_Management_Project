@@ -3,12 +3,16 @@ const router = express.Router();
 const multer = require('multer');
 const authMiddleware = require('../middleware/auth');
 const roomsController = require('../controllers/rooms.controller');
+const path = require('path');
+const { verify } = require('crypto');
 
+// Cấu hình lưu trữ file upload tạm thời vào thư mục backend/uploads/
 const storage = multer.diskStorage({
-    destination: function(req, file, cb) {
-        cb(null, 'uploads/');
+    destination: function (req, file, cb) {
+        cb(null, path.join(__dirname, '../uploads/'));
     },
-    filename: function(req, file, cb) {
+    filename: function (req, file, cb) {
+        // Đặt tên file kèm mốc thời gian để tránh trùng lặp
         cb(null, Date.now() + '-' + file.originalname);
     }
 });
@@ -25,5 +29,7 @@ router.get('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(VIEW_R
 router.post('/', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), upload.single('image'), roomsController.create);
 router.put('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), upload.single('image'), roomsController.update);
 router.delete('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.ADMIN), roomsController.remove);
+router.post('/import-excel', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.ADMIN), upload.single('excelFile'), roomsController.importExcel);
+
 
 module.exports = router;
