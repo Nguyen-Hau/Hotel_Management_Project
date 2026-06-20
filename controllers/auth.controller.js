@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 
 const SECRET_KEY = process.env.JWT_SECRET || 'hotel_management_secret_key_2026';
 
-// Hàm kiểm tra đầu số điện thoại đổi thành cấu trúc if-else đơn giản
+// Hàm kiểm tra đầu số điện thoại 
 function getCountryFromPhone(phone) {
     if (!phone) {
         return 'Việt Nam';

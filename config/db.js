@@ -25,9 +25,13 @@ async function testConnection() {
         // Viết tường minh, không dùng destructuring mảng lồng nhau
         const result = await db.query('SELECT * FROM employees');
         const empRows = result[0];
-        
+
+        const result1 = await db.query('SELECT * FROM customers');
+        const cusRows = result1[0];
+
         console.log('Ket noi MySQL thanh cong!');
         console.log('So luong nhan vien trong db: ' + empRows.length);
+        console.log('So luong khach hang trong db: ' + cusRows.length);
     } catch (err) {
         console.error('Loi ket noi MySQL:', err.message);
     }
