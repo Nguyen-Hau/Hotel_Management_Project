@@ -1,6 +1,5 @@
 const db = require('../config/db');
 
-// Hàm bổ trợ in lỗi viết dạng function truyền thống
 function errRes(res, msg, err) {
     console.error(msg, err);
     let chiTietLoi = '';
@@ -68,7 +67,6 @@ async function getDashboard(req, res) {
             occupancyRate: occupancyRate
         };
 
-        // ========== Xử lý phần dữ liệu biểu đồ của STAFF ==========
         if (isStaff) {
             const [trend] = await db.query(
                 `SELECT DATE_FORMAT(created_at, '%m/%Y') as label, 
@@ -142,7 +140,6 @@ async function getDashboard(req, res) {
             stats.occupancyByMonth = listOccupancy;
         }
 
-        // ========== Xử lý phần dữ liệu của CUSTOMER ==========
         if (role === 'customer') {
             const [custRows] = await db.query(`
                 SELECT 
@@ -183,7 +180,6 @@ async function getRecentActivities(req, res) {
     }
 }
 
-// Đồng bộ xuất module giống hoàn toàn file users.controller.js
 module.exports = {
     getDashboard,
     getRecentActivities

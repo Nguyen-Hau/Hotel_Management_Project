@@ -22,7 +22,6 @@ async function testConnection() {
     try {
         await db.query('SELECT 1');
         
-        // Viết tường minh, không dùng destructuring mảng lồng nhau
         const result = await db.query('SELECT * FROM employees');
         const empRows = result[0];
 
@@ -37,7 +36,7 @@ async function testConnection() {
     }
 }
 
-// Chạy hàm kiểm tra luôn
+// Chạy hàm kiểm tra
 testConnection();
 
 module.exports = db;

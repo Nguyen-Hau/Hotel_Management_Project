@@ -6,7 +6,7 @@ const roomsController = require('../controllers/rooms.controller');
 const path = require('path');
 const { verify } = require('crypto');
 
-// Cấu hình lưu trữ file upload tạm thời vào thư mục backend/uploads/
+// Cấu hình lưu trữ file upload 
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
         cb(null, path.join(__dirname, '../uploads/'));
@@ -19,7 +19,6 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-// Gộp các quyền dành cho chức năng xem phòng
 const VIEW_ROLES = authMiddleware.ROLES.STAFF.concat(authMiddleware.ROLES.CUSTOMER);
 
 router.get('/', authMiddleware.verifyToken, authMiddleware.requireRole(VIEW_ROLES), roomsController.getAll);

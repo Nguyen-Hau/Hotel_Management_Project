@@ -1,9 +1,7 @@
 const jwt = require('jsonwebtoken');
 const SECRET_KEY = process.env.JWT_SECRET || 'hotel_management_secret_key_2026';
 
-// Middleware xác thực token JWT ngắn gọn
 const verifyToken = (req, res, next) => {
-    // Không dùng optional chaining phức tạp, kiểm tra tường minh
     const authHeader = req.headers.authorization;
     if (!authHeader) {
         return res.status(401).json({ 

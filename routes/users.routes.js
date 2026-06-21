@@ -2,6 +2,7 @@ const router = require('express').Router(), { verifyToken, ROLES, requireRole } 
 
 const errRes = (res, err) => res.status(500).json({ message: err.message }), checkAdmin = requireRole(ROLES.ADMIN);
 
+// controller
 const usersController = {
     getAllUsers: async (req, res) => {
         try { return res.json((await db.query('SELECT employee_id, full_name, username, role, created_at FROM employees ORDER BY employee_id DESC'))[0]); } 
@@ -36,7 +37,7 @@ const usersController = {
     }
 };
 
-// ==================== ROUTES ====================
+// router
 router.get('/', verifyToken, checkAdmin, usersController.getAllUsers);
 router.get('/:id', verifyToken, checkAdmin, usersController.getUserById);
 router.post('/', verifyToken, checkAdmin, usersController.createUser);

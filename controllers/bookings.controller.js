@@ -193,7 +193,6 @@ async function cancel(req, res) {
     }
 }
 
-// Đồng bộ xuất module giống hoàn toàn file users.controller.js
 module.exports = {
     getAll,
     getById,

@@ -14,7 +14,6 @@ function sendErrorResponse(res, err) {
 // Tạo mảng phân quyền cho các chức năng thông thường
 const VIEW_ROLES = authMiddleware.ROLES.STAFF.concat(authMiddleware.ROLES.CUSTOMER);
 
-// ==================== CHỨC NĂNG CONTROLLERS ====================\r
 
 // 1. Lấy tất cả hoặc chi tiết bản thân khách hàng
 async function getAllCustomers(req, res) {
@@ -106,7 +105,6 @@ async function removeCustomer(req, res) {
     }
 }
 
-// ==================== ĐỊNH TUYẾN ROUTES ====================\r
 router.get('/', authMiddleware.verifyToken, authMiddleware.requireRole(VIEW_ROLES), getAllCustomers);
 router.get('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(VIEW_ROLES), getCustomerById);
 router.put('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(VIEW_ROLES), updateCustomer);

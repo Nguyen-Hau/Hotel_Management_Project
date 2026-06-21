@@ -91,7 +91,6 @@ async function register(req, res) {
 
         const country = getCountryFromPhone(phone);
         
-        // Thầy bỏ luôn trường created_at ở đây vì Database đã có DEFAULT CURRENT_TIMESTAMP lo rồi!
         const [resDb] = await db.query(
             `INSERT INTO customers (full_name, email, phone, country, cccd, password, role) 
              VALUES (?, ?, ?, ?, ?, ?, 'customer')`, 

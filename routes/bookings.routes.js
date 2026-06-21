@@ -5,7 +5,6 @@ const bookingsController = require('../controllers/bookings.controller'); // Imp
 // Gộp mảng quyền hạn bằng cách concat truyền thống
 const authRoles = requireRole(ROLES.STAFF.concat(ROLES.CUSTOMER));
 
-// ==================== CONFIG ROUTES ====================
 // Lấy danh sách đặt phòng
 router.get('/', verifyToken, authRoles, bookingsController.getAll);
 

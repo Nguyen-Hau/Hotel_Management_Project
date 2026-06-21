@@ -43,6 +43,8 @@ async function getById(req, res) {
     }
 }
 
+
+//  
 async function create(req, res) {
     try {
         const { room_number, room_type, price, services, status } = req.body;
@@ -62,6 +64,7 @@ async function create(req, res) {
     }
 }
 
+// 
 async function update(req, res) {
     try {
         const { room_number, room_type, price, services, status } = req.body;
@@ -85,6 +88,7 @@ async function update(req, res) {
     }
 }
 
+// 
 async function remove(req, res) {
     try {
         const [room] = await db.query('SELECT image FROM rooms WHERE room_id = ?', [req.params.id]);

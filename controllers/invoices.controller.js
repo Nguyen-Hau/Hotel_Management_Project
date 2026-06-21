@@ -9,7 +9,6 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-// Hàm hỗ trợ xuất lỗi viết kiểu truyền thống
 function errRes(res, msg, err) {
     console.error(msg, err);
     return res.status(500).json({ 
@@ -43,7 +42,7 @@ async function getAll(req, res) {
     }
 }
 
-// Lấy chi tiết một hóa đơn (Sửa lỗi khuyết thông tin khách hàng và dịch vụ)
+// Lấy chi tiết một hóa đơn
 async function getById(req, res) {
     try {
         const invoiceId = req.params.id;

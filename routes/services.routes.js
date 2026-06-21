@@ -2,7 +2,7 @@ const router = require('express').Router(), { verifyToken, ROLES, requireRole } 
 
 const errRes = (res, err) => res.status(500).json({ message: err.message }), checkStaff = requireRole(ROLES.STAFF);
 
-// ==================== CONTROLLERS ====================
+// controller
 const getAll = async (req, res) => {
     try { return res.json((await db.query('SELECT * FROM services ORDER BY service_id'))[0]); } 
     catch (err) { return errRes(res, err); }
@@ -50,7 +50,7 @@ const removeFromBooking = async (req, res) => {
     } catch (err) { return errRes(res, err); }
 };
 
-// ==================== ROUTES ====================
+// router
 router.get('/', verifyToken, checkStaff, getAll);
 router.post('/', verifyToken, checkStaff, create);
 router.put('/:id', verifyToken, checkStaff, update);

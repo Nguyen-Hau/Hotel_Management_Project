@@ -3,11 +3,10 @@ const router = express.Router();
 const invoiceController = require('../controllers/invoices.controller');
 const authMiddleware = require('../middleware/auth');
 
-// Lấy ra danh sách các role hợp lệ
-const STAFF_ROLES = authMiddleware.ROLES.STAFF; // Mảng các role nhân viên
-const CUSTOMER_ROLES = authMiddleware.ROLES.CUSTOMER; // Mảng các role khách hàng
+const STAFF_ROLES = authMiddleware.ROLES.STAFF; 
+const CUSTOMER_ROLES = authMiddleware.ROLES.CUSTOMER; 
 
-// Gộp các quyền truy cập bằng cách tạo mảng mới bình thường
+
 const ALLOWED_ROLES = STAFF_ROLES.concat(CUSTOMER_ROLES);
 
 router.get('/', authMiddleware.verifyToken, authMiddleware.requireRole(ALLOWED_ROLES), invoiceController.getAll);
