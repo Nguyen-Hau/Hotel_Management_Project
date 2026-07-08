@@ -29,10 +29,10 @@ async function create(req, res) {
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const [result] = await db.query(
-            'INSERT INTO employees (full_name, username, password, role) VALUES (?, ?, ?, ?)', 
+            'INSERT INTO employees (full_name, username, password, role) VALUES (?, ?, ?, ?)',
             [full_name, username, hashedPassword, role]
         );
-        
+
         return res.json({ success: true, message: 'Thêm nhân viên thành công', id: result.insertId });
     } catch (err) {
         return errRes(res, 'Lỗi khi thêm nhân viên', err);
@@ -44,16 +44,16 @@ async function update(req, res) {
         const { full_name, username, role, password } = req.body;
         let sql = 'UPDATE employees SET full_name = ?, username = ?, role = ?';
         let params = [full_name, username, role];
-        
+
         if (password && password.trim() !== '') {
             sql += ', password = ?';
             const hashedPassword = await bcrypt.hash(password, 10);
             params.push(hashedPassword);
         }
-        
+
         sql += ' WHERE employee_id = ?';
         params.push(req.params.id);
-        
+
         const [result] = await db.query(sql, params);
         if (result.affectedRows === 0) {
             return res.status(404).json({ message: 'Không tìm thấy thông tin nhân viên' });

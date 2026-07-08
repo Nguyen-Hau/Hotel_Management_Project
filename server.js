@@ -34,30 +34,30 @@ const bookingsRoutes = require('./routes/bookings.routes');
 const invoicesRoutes = require('./routes/invoices.routes');
 const employeesRoutes = require('./routes/employees.routes');
 
-app.use('/api/auth', authRoutes);
-app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/rooms', roomsRoutes);
-app.use('/api/customers', customersRoutes);
-app.use('/api/users', usersRoutes);
-app.use('/api/services', servicesRoutes);
-app.use('/api/bookings', bookingsRoutes);
-app.use('/api/invoices', invoicesRoutes);
-app.use('/api/employees', employeesRoutes);
+app.use('/api/auth', authRoutes); // Đăng nhập và đăng ký tài khoản
+app.use('/api/dashboard', dashboardRoutes); // Dashboard
+app.use('/api/rooms', roomsRoutes); // Phòng
+app.use('/api/customers', customersRoutes); // Khách hàng
+app.use('/api/users', usersRoutes); // Người dùng
+app.use('/api/services', servicesRoutes); // Dịch vụ
+app.use('/api/bookings', bookingsRoutes); // Đặt phòng
+app.use('/api/invoices', invoicesRoutes); // Hóa đơn
+app.use('/api/employees', employeesRoutes); // Nhân viên
 
 // Endpoint kiểm tra hệ thống
-app.get('/api/test', function(req, res) {
+app.get('/api/test', function (req, res) {
     return res.json({ message: 'API is working!' });
 });
 
-app.get('/api/health', function(req, res) {
-    return res.json({ 
-        status: 'OK', 
-        timestamp: new Date().toISOString() 
+app.get('/api/health', function (req, res) {
+    return res.json({
+        status: 'OK',
+        timestamp: new Date().toISOString()
     });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, function() {
+app.listen(PORT, function () {
     console.log('=== SERVER STARTED ===');
     console.log('Server dang chay tai port: ' + PORT);
 });

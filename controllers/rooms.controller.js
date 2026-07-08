@@ -24,8 +24,26 @@ function delImg(img) {
 
 async function getAll(req, res) {
     try {
-        const [rooms] = await db.query('SELECT * FROM rooms ORDER BY room_number');
-        return res.json(rooms);
+        const { check_in, check_out } = req.query;
+        if (check_in) {
+            const queryCheckOut = check_out || new Date(new Date(check_in).getTime() + 86400000).toISOString().split('T')[0];
+            const [rooms] = await db.query(
+                `SELECT r.* FROM rooms r 
+                 WHERE r.status != 'maintenance' 
+                   AND r.room_id NOT IN (
+                       SELECT b.room_id FROM bookings b 
+                       WHERE b.status IN ('booked', 'checked_in') 
+                         AND IFNULL(b.check_out, DATE_ADD(b.check_in, INTERVAL 1 DAY)) > ? 
+                         AND b.check_in < ?
+                   )
+                 ORDER BY r.room_number`,
+                [check_in, queryCheckOut]
+            );
+            return res.json(rooms);
+        } else {
+            const [rooms] = await db.query('SELECT * FROM rooms ORDER BY room_number');
+            return res.json(rooms);
+        }
     } catch (err) {
         return errRes(res, 'Lỗi khi lấy danh sách phòng', err);
     }
@@ -126,11 +144,25 @@ async function importExcel(req, res) {
 
         // Duyệt qua từng hàng dữ liệu của file Excel bằng vòng lặp
         for (let row of excelData) {
+            // Bỏ qua dòng chỉ định phân tách (sep=,) của Excel nếu có
+            if (row['STT'] === 'sep=,' || row['sep=,'] !== undefined || String(row['Số phòng']).includes('sep=')) {
+                continue;
+            }
+
             // Lấy dữ liệu theo tên cột tương ứng trong file Excel mẫu
             let roomNumber = row['Số phòng'] || row['room_number'];
             let roomType = row['Loại phòng'] || row['room_type'];
-            let price = row['Giá phòng'] || row['price'];
-            let status = row['Trạng thái'] || row['status'] || 'available';
+            let price = row['Giá phòng'] || row['price'] || row['Giá/đêm'];
+            
+            // Xử lý chuẩn hóa trạng thái từ tiếng Việt sang mã DB
+            let statusRaw = row['Trạng thái'] || row['status'] || 'available';
+            let status = 'available';
+            statusRaw = String(statusRaw).trim();
+            if (statusRaw === 'Trống' || statusRaw === 'available') status = 'available';
+            else if (statusRaw === 'Đang ở' || statusRaw === 'checked_in') status = 'checked_in';
+            else if (statusRaw === 'Đã đặt' || statusRaw === 'booked') status = 'booked';
+            else if (statusRaw === 'Bảo trì' || statusRaw === 'maintenance') status = 'maintenance';
+            else status = statusRaw;
 
             // Nếu hàng đó trống số phòng hoặc loại phòng thì bỏ qua dòng đó
             if (!roomNumber || !roomType) {

@@ -23,4 +23,7 @@ router.put('/checkout/:id', verifyToken, requireRole(ROLES.STAFF), bookingsContr
 // Hủy đơn đặt phòng
 router.put('/cancel/:id', verifyToken, authRoles, bookingsController.cancel);
 
+// Gia hạn đơn đặt phòng
+router.put('/extend/:id', verifyToken, authRoles, bookingsController.extend);
+
 module.exports = router;

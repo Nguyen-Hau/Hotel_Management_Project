@@ -180,7 +180,65 @@ async function getRecentActivities(req, res) {
     }
 }
 
+// 3. Thống kê doanh thu theo thời gian tùy chọn
+async function getCustomRevenue(req, res) {
+    try {
+        const { start, end } = req.query;
+        if (!start || !end) {
+            return res.status(400).json({ message: 'Vui lòng cung cấp tham số thời gian start và end' });
+        }
+
+        // Query summary
+        const [summary] = await db.query(
+            `SELECT 
+                IFNULL(SUM(total_amount), 0) as totalRevenue,
+                IFNULL(SUM(room_amount), 0) as roomRevenue,
+                IFNULL(SUM(service_amount), 0) as serviceRevenue,
+                COUNT(*) as invoiceCount
+             FROM invoices
+             WHERE status = 'paid'
+               AND paid_at >= ?
+               AND paid_at <= ?`,
+            [start, end]
+        );
+
+        // Query invoice list
+        const [invoices] = await db.query(
+            `SELECT 
+                i.invoice_id,
+                i.booking_id,
+                c.full_name as customer_name,
+                c.phone,
+                r.room_number,
+                r.room_type,
+                i.room_amount,
+                i.service_amount,
+                i.total_amount,
+                i.payment_method,
+                i.paid_at
+             FROM invoices i
+             JOIN bookings b ON i.booking_id = b.booking_id
+             JOIN customers c ON b.customer_id = c.customer_id
+             JOIN rooms r ON b.room_id = r.room_id
+             WHERE i.status = 'paid'
+               AND i.paid_at >= ?
+               AND i.paid_at <= ?
+             ORDER BY i.paid_at DESC`,
+            [start, end]
+        );
+
+        return res.json({
+            success: true,
+            summary: summary[0],
+            invoices: invoices
+        });
+    } catch (err) {
+        return errRes(res, 'Lỗi khi lấy doanh thu tùy chọn', err);
+    }
+}
+
 module.exports = {
     getDashboard,
-    getRecentActivities
+    getRecentActivities,
+    getCustomRevenue
 };

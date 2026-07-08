@@ -21,7 +21,7 @@ async function getAll(req, res) {
     try {
         let sql = `
             SELECT i.*, c.full_name as customer_name, c.email as customer_email, c.phone, 
-                   r.room_number, r.room_type, b.check_in, b.check_out, b.total_nights 
+                   r.room_number, r.room_type, b.check_in, b.check_out, b.total_nights, b.booking_group_id 
             FROM invoices i 
             JOIN bookings b ON i.booking_id = b.booking_id 
             JOIN customers c ON b.customer_id = c.customer_id 
@@ -52,7 +52,7 @@ async function getById(req, res) {
                    c.email as customer_email, 
                    c.phone as customer_phone, 
                    r.room_number, r.room_type, 
-                   b.check_in, b.check_out, b.total_nights
+                   b.check_in, b.check_out, b.total_nights, b.booking_group_id
             FROM invoices i
             JOIN bookings b ON i.booking_id = b.booking_id
             JOIN customers c ON b.customer_id = c.customer_id
@@ -76,8 +76,27 @@ async function getById(req, res) {
             WHERE bs.booking_id = ?
         `;
         const [serviceRows] = await db.query(servicesSql, [invoiceData.booking_id]);
-        
         invoiceData.services = serviceRows;
+
+        // Nếu thuộc nhóm đặt nhiều phòng, lấy tất cả các hóa đơn trong nhóm
+        if (invoiceData.booking_group_id) {
+            const groupInvoicesSql = `
+                SELECT i.*, r.room_number, r.room_type, b.booking_id
+                FROM invoices i
+                JOIN bookings b ON i.booking_id = b.booking_id
+                JOIN rooms r ON b.room_id = r.room_id
+                WHERE b.booking_group_id = ?
+            `;
+            const [groupRows] = await db.query(groupInvoicesSql, [invoiceData.booking_group_id]);
+            
+            // Lấy các dịch vụ cho từng hóa đơn trong nhóm
+            for (let gInv of groupRows) {
+                const [gSvs] = await db.query(servicesSql, [gInv.booking_id]);
+                gInv.services = gSvs;
+            }
+            invoiceData.group_invoices = groupRows;
+        }
+
         return res.json(invoiceData);
     } catch (err) {
         return errRes(res, 'Lỗi lấy chi tiết hóa đơn', err);
@@ -100,21 +119,38 @@ async function getByBooking(req, res) {
 // Thanh toán hóa đơn
 async function pay(req, res) {
     try {
-        const { payment_method } = req.body;
-        const [invoice] = await db.query('SELECT status FROM invoices WHERE invoice_id = ?', [req.params.id]);
+        const { payment_method, pay_group } = req.body;
+        const [invoiceRows] = await db.query(
+            `SELECT i.status, b.booking_group_id 
+             FROM invoices i 
+             JOIN bookings b ON i.booking_id = b.booking_id 
+             WHERE i.invoice_id = ?`, 
+            [req.params.id]
+        );
         
-        if (invoice.length === 0) {
+        if (invoiceRows.length === 0) {
             return res.status(404).json({ message: 'Không tìm thấy hóa đơn' });
         }
-        if (invoice[0].status === 'paid') {
+        if (invoiceRows[0].status === 'paid') {
             return res.status(400).json({ message: 'Hóa đơn này đã được thanh toán trước đó' });
         }
 
-        await db.query(
-            "UPDATE invoices SET status = 'paid', payment_method = ?, paid_at = NOW() WHERE invoice_id = ?", 
-            [payment_method || 'cash', req.params.id]
-        );
-        return res.json({ success: true, message: 'Thanh toán hóa đơn thành công' });
+        if (pay_group && invoiceRows[0].booking_group_id) {
+            await db.query(
+                `UPDATE invoices i
+                 JOIN bookings b ON i.booking_id = b.booking_id
+                 SET i.status = 'paid', i.payment_method = ?, i.paid_at = NOW()
+                 WHERE b.booking_group_id = ? AND i.status != 'paid'`,
+                [payment_method || 'cash', invoiceRows[0].booking_group_id]
+            );
+            return res.json({ success: true, message: 'Thanh toán gộp các hóa đơn thành công' });
+        } else {
+            await db.query(
+                "UPDATE invoices SET status = 'paid', payment_method = ?, paid_at = NOW() WHERE invoice_id = ?", 
+                [payment_method || 'cash', req.params.id]
+            );
+            return res.json({ success: true, message: 'Thanh toán hóa đơn thành công' });
+        }
     } catch (err) {
         return errRes(res, 'Lỗi khi thanh toán hóa đơn', err);
     }
