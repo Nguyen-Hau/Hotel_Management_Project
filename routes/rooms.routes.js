@@ -4,7 +4,6 @@ const multer = require('multer');
 const authMiddleware = require('../middleware/auth');
 const roomsController = require('../controllers/rooms.controller');
 const path = require('path');
-const { verify } = require('crypto');
 
 // Cấu hình lưu trữ file upload 
 const storage = multer.diskStorage({
@@ -21,13 +20,22 @@ const upload = multer({ storage: storage });
 
 const VIEW_ROLES = authMiddleware.ROLES.STAFF.concat(authMiddleware.ROLES.CUSTOMER);
 
+// Lấy tất cả phòng (dành cho tất cả người dùng đã đăng nhập)
 router.get('/', authMiddleware.verifyToken, authMiddleware.requireRole(VIEW_ROLES), roomsController.getAll);
+// Lấy thông tin phòng theo id (dành cho tất cả người dùng đã đăng nhập)
 router.get('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(VIEW_ROLES), roomsController.getById);
 
 // Các chức năng quản trị phòng dành riêng cho nhân viên/admin
-router.post('/', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), upload.single('image'), roomsController.create);
-router.put('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), upload.single('image'), roomsController.update);
+// Thêm phòng mới (dành riêng cho admin)
+router.post('/', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.ADMIN), upload.single('image'), roomsController.create);
+
+// Cập nhật thông tin phòng (dành riêng cho admin)
+router.put('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.ADMIN), upload.single('image'), roomsController.update);
+
+// Xóa phòng (dành riêng cho admin)
 router.delete('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.ADMIN), roomsController.remove);
+
+// Import danh sách phòng từ file Excel (dành riêng cho admin)
 router.post('/import-excel', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.ADMIN), upload.single('excelFile'), roomsController.importExcel);
 
 

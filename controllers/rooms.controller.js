@@ -3,30 +3,28 @@ const xlsx = require('xlsx');
 const path = require('path');
 const fs = require('fs');
 
-
-function errRes(res, msg, err) {
-    console.error(msg, err);
-    let chiTietLoi = '';
-    if (err && err.message) {
-        chiTietLoi = ': ' + err.message;
-    }
-    return res.status(500).json({ message: msg + chiTietLoi });
-}
-
-function delImg(img) {
-    if (img) {
+// 2. Xóa ảnh cũ khi update ảnh mới
+function deleteImg(img) {
+    if (img) { // Kiểm tra xem có ảnh không
+        // Đường dẫn đầy đủ đến file ảnh cần xóa
         const pth = path.join(__dirname, '../../uploads', path.basename(img));
-        if (fs.existsSync(pth)) {
-            fs.unlinkSync(pth);
+        if (fs.existsSync(pth)) { // Kiểm tra xem có tồn tại file không
+            fs.unlinkSync(pth); // Xóa file
         }
     }
 }
 
-async function getAll(req, res) {
+// 3. Lấy tất cả phòng để thực hiện nghiệp vụ check-in, check-out xử lý lọc phòng trống trong ngày 
+async function getAll(request, response) {
     try {
-        const { check_in, check_out } = req.query;
-        if (check_in) {
+        // Lấy dữ liệu từ query string
+        const { check_in, check_out } = request.query;
+        // Nếu có check_in thì lấy danh sách phòng không bị trùng với thời gian check_in và check_out
+        // Nếu không có check_in thì lấy danh sách tất cả các phòng
+        if (check_in) { // Kiểm tra xem có check_in không
+            // Nếu không có check_out thì mặc định là check_in + 1 ngày
             const queryCheckOut = check_out || new Date(new Date(check_in).getTime() + 86400000).toISOString().split('T')[0];
+            // Lấy danh sách phòng không bị trùng với thời gian check_in và check_out
             const [rooms] = await db.query(
                 `SELECT r.* FROM rooms r 
                  WHERE r.status != 'maintenance' 
@@ -39,96 +37,114 @@ async function getAll(req, res) {
                  ORDER BY r.room_number`,
                 [check_in, queryCheckOut]
             );
-            return res.json(rooms);
+            return response.json(rooms);
         } else {
+            // Lấy danh sách tất cả các phòng dùng SELECT * FROM rooms
             const [rooms] = await db.query('SELECT * FROM rooms ORDER BY room_number');
-            return res.json(rooms);
+            return response.json(rooms); // trả ra dữ liệu các rooms
         }
     } catch (err) {
-        return errRes(res, 'Lỗi khi lấy danh sách phòng', err);
+        return response.status(500).json({
+            success: false,
+            message: "Lỗi hệ thống: " + err.message
+        });
     }
 }
 
-async function getById(req, res) {
+// 4. Lấy thông tin phòng theo id
+async function getById(request, response) {
     try {
-        const [room] = await db.query('SELECT * FROM rooms WHERE room_id = ?', [req.params.id]);
+        const [room] = await db.query('SELECT * FROM rooms WHERE room_id = ?', [request.params.id]);
         if (room.length === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy thông tin phòng này' });
+            return response.status(404).json({ message: 'Không tìm thấy thông tin phòng này' });
         }
-        return res.json(room[0]);
+        return response.json(room[0]);
     } catch (err) {
-        return errRes(res, 'Lỗi khi lấy thông tin phòng', err);
+        return response.status(500).json({
+            success: false,
+            message: "Lỗi hệ thống: " + err.message
+        });
     }
 }
 
 
-//  
-async function create(req, res) {
+// 5. Thêm phòng mới
+async function create(request, response) {
     try {
-        const { room_number, room_type, price, services, status } = req.body;
+        const { room_number, room_type, price, services, status } = request.body;
         let image = null;
-        if (req.file) {
-            image = `/uploads/${req.file.filename}`;
+        if (request.file) {
+            image = `/uploads/${request.file.filename}`;
         }
-        
+
         const roomStatus = status || 'available';
         const [result] = await db.query(
-            'INSERT INTO rooms (room_number, room_type, price, image, services, status) VALUES (?, ?, ?, ?, ?, ?)', 
+            'INSERT INTO rooms (room_number, room_type, price, image, services, status) VALUES (?, ?, ?, ?, ?, ?)',
             [room_number, room_type, price, image, services, roomStatus]
         );
-        return res.json({ success: true, message: 'Thêm phòng mới thành công', id: result.insertId });
+        return response.json({ success: true, message: 'Thêm phòng mới thành công', id: result.insertId });
     } catch (err) {
-        return errRes(res, 'Lỗi khi thêm phòng', err);
+        return response.status(500).json({
+            success: false,
+            message: "Lỗi hệ thống: " + err.message
+        });
     }
 }
 
-// 
-async function update(req, res) {
+// 6. Cập nhật thông tin phòng
+async function update(request, response) {
     try {
-        const { room_number, room_type, price, services, status } = req.body;
-        let image = req.body.image;
-        
-        if (req.file) {
-            const [old] = await db.query('SELECT image FROM rooms WHERE room_id = ?', [req.params.id]);
+        const { room_number, room_type, price, services, status } = request.body;
+        let image = request.body.image;
+
+        if (request.file) {
+            const [old] = await db.query('SELECT image FROM rooms WHERE room_id = ?', [request.params.id]);
             if (old.length > 0) {
-                delImg(old[0].image);
+                deleteImg(old[0].image);
             }
-            image = `/uploads/${req.file.filename}`;
+            image = `/uploads/${request.file.filename}`;
         }
-        
+
         await db.query(
-            'UPDATE rooms SET room_number = ?, room_type = ?, price = ?, image = ?, services = ?, status = ? WHERE room_id = ?', 
-            [room_number, room_type, price, image, services, status, req.params.id]
+            'UPDATE rooms SET room_number = ?, room_type = ?, price = ?, image = ?, services = ?, status = ? WHERE room_id = ?',
+            [room_number, room_type, price, image, services, status, request.params.id]
         );
-        return res.json({ success: true, message: 'Cập nhật phòng thành công' });
+        return response.json({ success: true, message: 'Cập nhật phòng thành công' });
     } catch (err) {
-        return errRes(res, 'Lỗi khi cập nhật thông tin phòng', err);
+        return response.status(500).json({
+            success: false,
+            message: "Lỗi hệ thống" + err.message
+        });
     }
 }
 
-// 
-async function remove(req, res) {
+// 7. Xóa phòng
+async function remove(request, response) {
     try {
-        const [room] = await db.query('SELECT image FROM rooms WHERE room_id = ?', [req.params.id]);
+        const [room] = await db.query('SELECT image FROM rooms WHERE room_id = ?', [request.params.id]);
+
         if (room.length > 0) {
-            delImg(room[0].image);
+            deleteImg(room[0].image);
         }
-        
-        await db.query('DELETE FROM rooms WHERE room_id = ?', [req.params.id]);
-        return res.json({ success: true, message: 'Xóa phòng thành công' });
+
+        await db.query('DELETE FROM rooms WHERE room_id = ?', [request.params.id]);
+        return response.json({ success: true, message: 'Xóa phòng thành công' });
     } catch (err) {
-        return errRes(res, 'Lỗi khi xóa phòng', err);
+        return response.status(500).json({
+            success: false,
+            message: "Lỗi hệ thống: " + err.message
+        });
     }
 }
 
 // Hàm cập nhật danh sách phòng từ file Excel
-async function importExcel(req, res) {
+async function importExcel(request, response) {
     // Kiểm tra xem người dùng đã tải file lên chưa
-    if (!req.file) {
-        return res.status(400).json({ message: 'Vui lòng chọn file Excel để tải lên' });
+    if (!request.file) {
+        return response.status(400).json({ message: 'Vui lòng chọn file Excel để tải lên' });
     }
 
-    const filePath = req.file.path;
+    const filePath = request.file.path;
     let thanhCong = 0;
     let capNhat = 0;
     let loi = 0;
@@ -153,7 +169,7 @@ async function importExcel(req, res) {
             let roomNumber = row['Số phòng'] || row['room_number'];
             let roomType = row['Loại phòng'] || row['room_type'];
             let price = row['Giá phòng'] || row['price'] || row['Giá/đêm'];
-            
+
             // Xử lý chuẩn hóa trạng thái từ tiếng Việt sang mã DB
             let statusRaw = row['Trạng thái'] || row['status'] || 'available';
             let status = 'available';
@@ -196,7 +212,7 @@ async function importExcel(req, res) {
         }
 
         // Trả kết quả thống kê chi tiết về cho phía giao diện hiển thị
-        return res.json({
+        return response.json({
             success: true,
             message: 'Xử lý file Excel hoàn tất!',
             details: {
@@ -211,7 +227,10 @@ async function importExcel(req, res) {
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
         }
-        return errRes(res, 'Lỗi hệ thống khi xử lý dữ liệu từ file Excel', err);
+        return response.status(500).json({
+            success: false,
+            message: "Lỗi hệ thống: " + err.message
+        });
     }
 }
 

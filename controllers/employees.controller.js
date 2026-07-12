@@ -6,25 +6,25 @@ function errRes(res, msg, err) {
     return res.status(500).json({ message: msg });
 }
 
-async function getAll(req, res) {
+async function getAll(request, response) {
     try {
         const [rows] = await db.query('SELECT employee_id, full_name, username, role FROM employees ORDER BY employee_id');
-        return res.json(rows);
+        return response.json(rows);
     } catch (err) {
-        return errRes(res, 'Lỗi khi lấy danh sách nhân viên', err);
+        return errRes(response, 'Lỗi khi lấy danh sách nhân viên', err);
     }
 }
 
-async function create(req, res) {
+async function create(request, response) {
     try {
-        const { full_name, username, password, role } = req.body;
+        const { full_name, username, password, role } = request.body;
         if (!full_name || !username || !password || !role) {
-            return res.status(400).json({ message: 'Vui lòng nhập đầy đủ thông tin' });
+            return response.status(400).json({ message: 'Vui lòng nhập đầy đủ thông tin' });
         }
 
         const [exist] = await db.query('SELECT 1 FROM employees WHERE username = ?', [username]);
         if (exist.length > 0) {
-            return res.status(400).json({ message: 'Tên đăng nhập đã tồn tại trên hệ thống' });
+            return response.status(400).json({ message: 'Tên đăng nhập đã tồn tại trên hệ thống' });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -33,15 +33,15 @@ async function create(req, res) {
             [full_name, username, hashedPassword, role]
         );
 
-        return res.json({ success: true, message: 'Thêm nhân viên thành công', id: result.insertId });
+        return response.json({ success: true, message: 'Thêm nhân viên thành công', id: result.insertId });
     } catch (err) {
-        return errRes(res, 'Lỗi khi thêm nhân viên', err);
+        return errRes(response, 'Lỗi khi thêm nhân viên', err);
     }
 }
 
-async function update(req, res) {
+async function update(request, response) {
     try {
-        const { full_name, username, role, password } = req.body;
+        const { full_name, username, role, password } = request.body;
         let sql = 'UPDATE employees SET full_name = ?, username = ?, role = ?';
         let params = [full_name, username, role];
 
@@ -52,27 +52,27 @@ async function update(req, res) {
         }
 
         sql += ' WHERE employee_id = ?';
-        params.push(req.params.id);
+        params.push(request.params.id);
 
         const [result] = await db.query(sql, params);
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy thông tin nhân viên' });
+            return response.status(404).json({ message: 'Không tìm thấy thông tin nhân viên' });
         }
-        return res.json({ success: true, message: 'Cập nhật nhân viên thành công' });
+        return response.json({ success: true, message: 'Cập nhật nhân viên thành công' });
     } catch (err) {
-        return errRes(res, 'Lỗi khi cập nhật nhân viên', err);
+        return errRes(response, 'Lỗi khi cập nhật nhân viên', err);
     }
 }
 
-async function remove(req, res) {
+async function remove(request, response) {
     try {
-        const [result] = await db.query('DELETE FROM employees WHERE employee_id = ?', [req.params.id]);
+        const [result] = await db.query('DELETE FROM employees WHERE employee_id = ?', [request.params.id]);
         if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Không tìm thấy nhân viên' });
+            return response.status(404).json({ message: 'Không tìm thấy nhân viên' });
         }
-        return res.json({ success: true, message: 'Xóa tài khoản nhân viên thành công' });
+        return response.json({ success: true, message: 'Xóa tài khoản nhân viên thành công' });
     } catch (err) {
-        return errRes(res, 'Lỗi khi xóa nhân viên', err);
+        return errRes(response, 'Lỗi khi xóa nhân viên', err);
     }
 }
 

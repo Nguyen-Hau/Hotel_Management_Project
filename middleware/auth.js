@@ -1,55 +1,71 @@
 const jwt = require('jsonwebtoken');
 const SECRET_KEY = process.env.JWT_SECRET || 'hotel_management_secret_key_2026';
 
-const verifyToken = (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-        return res.status(401).json({ 
-            success: false, 
-            message: 'Không có token xác thực. Vui lòng đăng nhập lại.' 
+// Xác thực và bảo mật token
+const verifyToken = (request, response, next) => {
+    const authHeader = request.headers.authorization; // Lấy token từ header authorization
+
+    // Kiểm tra có header authorization không
+    if (!authHeader) { // Kiểm tra header authorization có tồn tại không
+        return response.status(401).json({
+            success: false, // Trả về false vì không có token
+            message: 'Không có token xác thực. Vui lòng đăng nhập lại.' // Trả về thông báo lỗi
         });
     }
 
-    const token = authHeader.split(' ')[1];
-    if (!token) {
-        return res.status(401).json({ 
-            success: false, 
-            message: 'Không có token xác thực. Vui lòng đăng nhập lại.' 
+    // Lấy token từ header authorization
+    const token = authHeader.split(' ')[1]; // Tách token từ header authorization
+
+    // Kiểm tra có token không
+    if (!token) { // Kiểm tra token có tồn tại không
+        return response.status(401).json({
+            success: false, // Trả về false vì không có token
+            message: 'Không có token xác thực. Vui lòng đăng nhập lại.' // Trả về thông báo lỗi
         });
     }
 
+    // Giải mã token
     try {
-        req.user = jwt.verify(token, SECRET_KEY);
+        // Lấy thông tin user từ token
+        request.user = jwt.verify(token, SECRET_KEY);
         return next();
     } catch (err) {
+        // Kiểm tra lỗi token
         let errMsg = 'Token không hợp lệ.';
+
+        // Kiểm tra token đã hết hạn chưa
         if (err.name === 'TokenExpiredError') {
             errMsg = 'Token đã hết hạn. Vui lòng đăng nhập lại.';
         }
-        return res.status(401).json({ 
-            success: false, 
-            message: errMsg 
+
+        // Trả về lỗi xác thực
+        return response.status(401).json({
+            success: false,
+            message: errMsg
         });
     }
 };
 
-// Middleware kiểm tra role người dùng
+// Kiểm tra quyền truy cập của người dùng
 const requireRole = (allowedRoles) => {
-    return (req, res, next) => {
-        if (!req.user) {
-            return res.status(401).json({ 
-                success: false, 
-                message: 'Chưa xác thực người dùng.' 
+    // Trả về function
+    return (request, response, next) => {
+        // Kiểm tra có user trong request không
+        if (!request.user) {
+            return response.status(401).json({
+                success: false,
+                message: 'Chưa xác thực người dùng.'
             });
         }
 
-        if (!allowedRoles.includes(req.user.role)) {
-            return res.status(403).json({ 
-                success: false, 
+        // Kiểm tra role người dùng có trong danh sách role được phép không
+        if (!allowedRoles.includes(request.user.role)) {
+            return response.status(403).json({
+                success: false,
                 message: 'Truy cập bị từ chối. Yêu cầu role: ' + allowedRoles.join(', ')
             });
         }
-        
+
         return next();
     };
 };

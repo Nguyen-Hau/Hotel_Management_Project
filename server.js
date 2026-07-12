@@ -9,19 +9,21 @@ const uploadsDir = path.join(__dirname, 'uploads');
 
 // Cấu hình Middleware
 app.use(cors({
-    origin: true,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    origin: true, // cho phép tất cả các domain (phía client) truy cập vào backend
+    credentials: true, // cho phép mang theo cookie
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // cho phép các phương thức HTTP
+    allowedHeaders: ['Content-Type', 'Authorization'] // cho phép các header
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json()); // để đọc dữ liệu từ JSON gửi lên
+app.use(express.urlencoded({ extended: true })); // để đọc dữ liệu từ form/file tải lên(từ HTML)
+
 
 // Kiểm tra thư mục uploads
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+if (!fs.existsSync(uploadsDir)) { // Ktra đã tạo thư mục uploads chưa
+    fs.mkdirSync(uploadsDir, { recursive: true }); // nếu chưa thì tạo thư mục uploads
 }
-app.use('/uploads', express.static(uploadsDir));
+app.use('/uploads', express.static(uploadsDir)); // dùng để lấy ảnh từ backend về frontend
+
 
 // Khai báo thủ công từng tuyến đường (Route)
 const authRoutes = require('./routes/auth.routes');
