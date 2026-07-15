@@ -7,10 +7,10 @@ const path = require('path');
 
 // Cấu hình lưu trữ file upload 
 const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
+    destination: function (request, file, cb) {
         cb(null, path.join(__dirname, '../uploads/'));
     },
-    filename: function (req, file, cb) {
+    filename: function (request, file, cb) {
         // Đặt tên file kèm mốc thời gian để tránh trùng lặp
         cb(null, Date.now() + '-' + file.originalname);
     }
@@ -37,6 +37,12 @@ router.delete('/:id', authMiddleware.verifyToken, authMiddleware.requireRole(aut
 
 // Import danh sách phòng từ file Excel (dành riêng cho admin)
 router.post('/import-excel', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.ADMIN), upload.single('excelFile'), roomsController.importExcel);
+
+// Các chức năng dọn dẹp phòng (Housekeeping) dành cho nhân viên/admin
+router.get('/housekeeping/list', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), roomsController.getHousekeepingRooms);
+router.put('/housekeeping/:id/start', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), roomsController.startCleaning);
+router.put('/housekeeping/:id/finish', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), roomsController.finishCleaning);
+router.put('/housekeeping/:id/confirm', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), roomsController.confirmCleaned);
 
 
 module.exports = router;

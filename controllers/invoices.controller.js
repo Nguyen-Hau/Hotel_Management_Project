@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const auditService = require('../services/audit.service');
 const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
@@ -136,6 +137,14 @@ async function pay(req, res) {
         }
 
         if (pay_group && invoiceRows[0].booking_group_id) {
+            // Lấy danh sách hóa đơn sẽ được thanh toán để ghi log
+            const [toPayInvs] = await db.query(
+                `SELECT i.invoice_id FROM invoices i 
+                 JOIN bookings b ON i.booking_id = b.booking_id 
+                 WHERE b.booking_group_id = ? AND i.status != 'paid'`,
+                [invoiceRows[0].booking_group_id]
+            );
+
             await db.query(
                 `UPDATE invoices i
                  JOIN bookings b ON i.booking_id = b.booking_id
@@ -143,12 +152,26 @@ async function pay(req, res) {
                  WHERE b.booking_group_id = ? AND i.status != 'paid'`,
                 [payment_method || 'cash', invoiceRows[0].booking_group_id]
             );
+
+            for (let inv of toPayInvs) {
+                await auditService.logAction(req, 'PAY_INVOICE', 'invoices', inv.invoice_id, 
+                    { status: 'unpaid' }, 
+                    { status: 'paid', payment_method }
+                );
+            }
+
             return res.json({ success: true, message: 'Thanh toán gộp các hóa đơn thành công' });
         } else {
             await db.query(
                 "UPDATE invoices SET status = 'paid', payment_method = ?, paid_at = NOW() WHERE invoice_id = ?", 
                 [payment_method || 'cash', req.params.id]
             );
+
+            await auditService.logAction(req, 'PAY_INVOICE', 'invoices', req.params.id, 
+                { status: 'unpaid' }, 
+                { status: 'paid', payment_method }
+            );
+
             return res.json({ success: true, message: 'Thanh toán hóa đơn thành công' });
         }
     } catch (err) {

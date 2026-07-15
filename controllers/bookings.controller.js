@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const auditService = require('../services/audit.service');
 
 // Hàm bổ trợ in lỗi viết dạng function truyền thống
 function errRes(res, msg, err) {
@@ -221,6 +222,14 @@ async function checkOut(req, res) {
         }
 
         const checkout_group = req.body.checkout_group;
+        const surcharges = req.body.surcharges;
+        const checkin_early = Number(surcharges?.checkin_early || 0);
+        const checkout_late = Number(surcharges?.checkout_late || 0);
+        const extra_people = Number(surcharges?.extra_people || 0);
+        const extra_bed = Number(surcharges?.extra_bed || 0);
+        const surcharge_description = surcharges?.description || '';
+        const surcharge_total = checkin_early + checkout_late + extra_people + extra_bed;
+
         let bookingsToCheckOut = [b[0]];
 
         if (checkout_group && b[0].booking_group_id) {
@@ -247,25 +256,50 @@ async function checkOut(req, res) {
 
             let rmAmt = nights * booking.room_price;
             let svAmt = Number(svs[0].total);
-            let total = rmAmt + svAmt;
+            let total = rmAmt + svAmt + surcharge_total;
             totalGroupAmount += total;
 
             await conn.query('UPDATE bookings SET status = "checked_out", total_nights = ? WHERE booking_id = ?', [nights, booking.booking_id]);
-            await conn.query('UPDATE rooms SET status = "available" WHERE room_id = ?', [booking.room_id]);
+            // Chuyển sang trạng thái bẩn (dirty) để nhân viên buồng dọn phòng dọn dẹp
+            await conn.query('UPDATE rooms SET status = "dirty" WHERE room_id = ?', [booking.room_id]);
 
             const [existInv] = await conn.query('SELECT invoice_id FROM invoices WHERE booking_id = ?', [booking.booking_id]);
             let invId = null;
             if (existInv.length > 0) {
                 invId = existInv[0].invoice_id;
-                await conn.query('UPDATE invoices SET room_amount = ?, service_amount = ?, total_amount = ? WHERE booking_id = ?', [rmAmt, svAmt, total, booking.booking_id]);
+                await conn.query(
+                    `UPDATE invoices 
+                     SET room_amount = ?, service_amount = ?, total_amount = ?, 
+                         surcharge_checkin_early = ?, surcharge_checkout_late = ?, 
+                         surcharge_extra_people = ?, surcharge_extra_bed = ?, 
+                         surcharge_description = ? 
+                     WHERE booking_id = ?`, 
+                    [rmAmt, svAmt, total, checkin_early, checkout_late, extra_people, extra_bed, surcharge_description, booking.booking_id]
+                );
             } else {
-                const [insertRes] = await conn.query('INSERT INTO invoices (booking_id, room_amount, service_amount, total_amount, status) VALUES (?, ?, ?, ?, "unpaid")', [booking.booking_id, rmAmt, svAmt, total]);
+                const [insertRes] = await conn.query(
+                    `INSERT INTO invoices 
+                     (booking_id, room_amount, service_amount, total_amount, status, 
+                      surcharge_checkin_early, surcharge_checkout_late, surcharge_extra_people, 
+                      surcharge_extra_bed, surcharge_description) 
+                     VALUES (?, ?, ?, ?, "unpaid", ?, ?, ?, ?, ?)`, 
+                    [booking.booking_id, rmAmt, svAmt, total, checkin_early, checkout_late, extra_people, extra_bed, surcharge_description]
+                );
                 invId = insertRes.insertId;
             }
             invoiceIds.push(invId);
         }
 
         await conn.commit();
+
+        // Ghi nhận lịch sử audit log
+        for (let booking of bookingsToCheckOut) {
+            await auditService.logAction(req, 'CHECK_OUT_BOOKING', 'bookings', booking.booking_id, 
+                { status: 'checked_in' }, 
+                { status: 'checked_out', surcharges: { checkin_early, checkout_late, extra_people, extra_bed } }
+            );
+        }
+
         return res.json({
             success: true,
             message: 'Check-out thành công',
@@ -300,6 +334,13 @@ async function cancel(req, res) {
 
         await db.query('UPDATE bookings SET status = "cancelled" WHERE booking_id = ?', [req.params.id]);
         await db.query('UPDATE rooms SET status = "available" WHERE room_id = ?', [b[0].room_id]);
+
+        // Ghi nhận lịch sử audit log
+        await auditService.logAction(req, 'CANCEL_BOOKING', 'bookings', req.params.id, 
+            { status: b[0].status }, 
+            { status: 'cancelled' }
+        );
+
         return res.json({ success: true, message: 'Hủy đặt phòng thành công' });
     } catch (err) {
         return errRes(res, 'Lỗi khi hủy đặt phòng', err);

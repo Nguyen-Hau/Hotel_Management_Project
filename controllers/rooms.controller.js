@@ -1,9 +1,10 @@
 const db = require('../config/db');
+const auditService = require('../services/audit.service');
 const xlsx = require('xlsx');
 const path = require('path');
 const fs = require('fs');
 
-// 2. Xóa ảnh cũ khi update ảnh mới
+// 1. Xóa ảnh cũ khi update ảnh mới
 function deleteImg(img) {
     if (img) { // Kiểm tra xem có ảnh không
         // Đường dẫn đầy đủ đến file ảnh cần xóa
@@ -14,7 +15,7 @@ function deleteImg(img) {
     }
 }
 
-// 3. Lấy tất cả phòng để thực hiện nghiệp vụ check-in, check-out xử lý lọc phòng trống trong ngày 
+// 2. Lấy tất cả phòng để thực hiện nghiệp vụ check-in, check-out xử lý lọc phòng trống trong ngày 
 async function getAll(request, response) {
     try {
         // Lấy dữ liệu từ query string
@@ -51,7 +52,7 @@ async function getAll(request, response) {
     }
 }
 
-// 4. Lấy thông tin phòng theo id
+// 3. Lấy thông tin phòng theo id
 async function getById(request, response) {
     try {
         const [room] = await db.query('SELECT * FROM rooms WHERE room_id = ?', [request.params.id]);
@@ -68,7 +69,7 @@ async function getById(request, response) {
 }
 
 
-// 5. Thêm phòng mới
+// 4. Thêm phòng mới
 async function create(request, response) {
     try {
         const { room_number, room_type, price, services, status } = request.body;
@@ -91,7 +92,7 @@ async function create(request, response) {
     }
 }
 
-// 6. Cập nhật thông tin phòng
+// 5. Cập nhật thông tin phòng
 async function update(request, response) {
     try {
         const { room_number, room_type, price, services, status } = request.body;
@@ -105,10 +106,21 @@ async function update(request, response) {
             image = `/uploads/${request.file.filename}`;
         }
 
+        // Lấy thông tin phòng cũ để làm lịch sử ghi log
+        const [oldRoom] = await db.query('SELECT room_number, room_type, price, status FROM rooms WHERE room_id = ?', [request.params.id]);
+
         await db.query(
             'UPDATE rooms SET room_number = ?, room_type = ?, price = ?, image = ?, services = ?, status = ? WHERE room_id = ?',
             [room_number, room_type, price, image, services, status, request.params.id]
         );
+
+        if (oldRoom.length > 0) {
+            await auditService.logAction(request, 'UPDATE_ROOM', 'rooms', request.params.id, 
+                oldRoom[0],
+                { room_number, room_type, price, status }
+            );
+        }
+
         return response.json({ success: true, message: 'Cập nhật phòng thành công' });
     } catch (err) {
         return response.status(500).json({
@@ -118,7 +130,7 @@ async function update(request, response) {
     }
 }
 
-// 7. Xóa phòng
+// 6. Xóa phòng
 async function remove(request, response) {
     try {
         const [room] = await db.query('SELECT image FROM rooms WHERE room_id = ?', [request.params.id]);
@@ -137,7 +149,7 @@ async function remove(request, response) {
     }
 }
 
-// Hàm cập nhật danh sách phòng từ file Excel
+// 7. Hàm cập nhật danh sách phòng từ file Excel
 async function importExcel(request, response) {
     // Kiểm tra xem người dùng đã tải file lên chưa
     if (!request.file) {
@@ -234,11 +246,103 @@ async function importExcel(request, response) {
     }
 }
 
+// 8. Lấy danh sách phòng buồng phòng 
+async function getHousekeepingRooms(request, response) {
+    try {
+        const [rooms] = await db.query(
+            "SELECT * FROM rooms WHERE status IN ('dirty', 'cleaning', 'inspected') ORDER BY room_number"
+        );
+        return response.json(rooms);
+    } catch (err) {
+        return response.status(500).json({
+            success: false,
+            message: "Lỗi hệ thống: " + err.message
+        });
+    }
+}
+
+// 9. Bắt đầu dọn dẹp phòng
+async function startCleaning(request, response) {
+    try {
+        const roomId = request.params.id;
+        const [room] = await db.query("SELECT status, room_number FROM rooms WHERE room_id = ?", [roomId]);
+        if (room.length === 0) {
+            return response.status(404).json({ message: 'Không tìm thấy phòng' });
+        }
+        if (room[0].status !== 'dirty') {
+            return response.status(400).json({ message: 'Chỉ có thể dọn phòng khi phòng đang ở trạng thái bẩn (dirty)' });
+        }
+
+        await db.query("UPDATE rooms SET status = 'cleaning' WHERE room_id = ?", [roomId]);
+        await auditService.logAction(request, 'ROOM_CLEAN_START', 'rooms', roomId, { status: 'dirty' }, { status: 'cleaning' });
+
+        return response.json({ success: true, message: 'Bắt đầu dọn phòng ' + room[0].room_number });
+    } catch (err) {
+        return response.status(500).json({
+            success: false,
+            message: "Lỗi hệ thống: " + err.message
+        });
+    }
+}
+
+// 10. Hoàn thành dọn dẹp phòng
+async function finishCleaning(request, response) {
+    try {
+        const roomId = request.params.id;
+        const [room] = await db.query("SELECT status, room_number FROM rooms WHERE room_id = ?", [roomId]);
+        if (room.length === 0) {
+            return response.status(404).json({ message: 'Không tìm thấy phòng' });
+        }
+        if (room[0].status !== 'cleaning') {
+            return response.status(400).json({ message: 'Chỉ có thể hoàn thành khi phòng đang dọn dẹp (cleaning)' });
+        }
+
+        await db.query("UPDATE rooms SET status = 'inspected' WHERE room_id = ?", [roomId]);
+        await auditService.logAction(request, 'ROOM_CLEAN_FINISH', 'rooms', roomId, { status: 'cleaning' }, { status: 'inspected' });
+
+        return response.json({ success: true, message: 'Đã hoàn thành dọn phòng ' + room[0].room_number + ', chờ kiểm tra' });
+    } catch (err) {
+        return response.status(500).json({
+            success: false,
+            message: "Lỗi hệ thống: " + err.message
+        });
+    }
+}
+
+// 11. Xác nhận phòng sạch 
+async function confirmCleaned(request, response) {
+    try {
+        const roomId = request.params.id;
+        const [room] = await db.query("SELECT status, room_number FROM rooms WHERE room_id = ?", [roomId]);
+        if (room.length === 0) {
+            return response.status(404).json({ message: 'Không tìm thấy phòng' });
+        }
+        if (room[0].status !== 'inspected' && room[0].status !== 'dirty' && room[0].status !== 'cleaning') {
+            return response.status(400).json({ message: 'Trạng thái phòng không phù hợp để xác nhận sạch' });
+        }
+
+        const oldStatus = room[0].status;
+        await db.query("UPDATE rooms SET status = 'available' WHERE room_id = ?", [roomId]);
+        await auditService.logAction(request, 'ROOM_CLEAN_CONFIRMED', 'rooms', roomId, { status: oldStatus }, { status: 'available' });
+
+        return response.json({ success: true, message: 'Xác nhận phòng ' + room[0].room_number + ' sạch sẽ, sẵn sàng sử dụng' });
+    } catch (err) {
+        return response.status(500).json({
+            success: false,
+            message: "Lỗi hệ thống: " + err.message
+        });
+    }
+}
+
 module.exports = {
     getAll,
     getById,
     create,
     update,
     remove,
-    importExcel
+    importExcel,
+    getHousekeepingRooms,
+    startCleaning,
+    finishCleaning,
+    confirmCleaned
 };

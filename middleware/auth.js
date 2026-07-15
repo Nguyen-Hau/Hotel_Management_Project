@@ -5,8 +5,8 @@ const SECRET_KEY = process.env.JWT_SECRET || 'hotel_management_secret_key_2026';
 const verifyToken = (request, response, next) => {
     const authHeader = request.headers.authorization; // Lấy token từ header authorization
 
-    // Kiểm tra có header authorization không
-    if (!authHeader) { // Kiểm tra header authorization có tồn tại không
+    // Ktra có header authorization không
+    if (!authHeader) { // Ktra header authorization có tồn tại không
         return response.status(401).json({
             success: false, // Trả về false vì không có token
             message: 'Không có token xác thực. Vui lòng đăng nhập lại.' // Trả về thông báo lỗi
@@ -16,8 +16,8 @@ const verifyToken = (request, response, next) => {
     // Lấy token từ header authorization
     const token = authHeader.split(' ')[1]; // Tách token từ header authorization
 
-    // Kiểm tra có token không
-    if (!token) { // Kiểm tra token có tồn tại không
+    // Ktra có token không
+    if (!token) { // Ktra token có tồn tại không
         return response.status(401).json({
             success: false, // Trả về false vì không có token
             message: 'Không có token xác thực. Vui lòng đăng nhập lại.' // Trả về thông báo lỗi
@@ -30,10 +30,10 @@ const verifyToken = (request, response, next) => {
         request.user = jwt.verify(token, SECRET_KEY);
         return next();
     } catch (err) {
-        // Kiểm tra lỗi token
+        // Ktra lỗi token
         let errMsg = 'Token không hợp lệ.';
 
-        // Kiểm tra token đã hết hạn chưa
+        // Ktra token đã hết hạn chưa
         if (err.name === 'TokenExpiredError') {
             errMsg = 'Token đã hết hạn. Vui lòng đăng nhập lại.';
         }
