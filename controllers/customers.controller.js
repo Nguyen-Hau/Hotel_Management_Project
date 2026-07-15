@@ -1,47 +1,42 @@
-const db = require('../config/db');
+const CustomersService = require('../services/customers.service');
 
 function errRes(res, msg, err) {
     console.error(msg, err);
-    return res.status(500).json({ message: msg });
-}
-
-function getCountryFromPhone(phone) {
-    if (!phone) {
-        return 'Việt Nam';
+    let chiTietLoi = '';
+    if (err && err.message) {
+        chiTietLoi = ': ' + err.message;
     }
-    if (phone.startsWith('+1')) {
-        return 'Hoa Kỳ';
-    }
-    if (phone.startsWith('+81')) {
-        return 'Nhật Bản';
-    }
-    if (phone.startsWith('+82')) {
-        return 'Hàn Quốc';
-    }
-    return 'Việt Nam';
+    return res.status(500).json({ message: msg + chiTietLoi });
 }
 
 async function getAll(req, res) {
     try {
-        const [rows] = await db.query('SELECT customer_id, full_name, email, phone, country, cccd, created_at FROM customers ORDER BY customer_id DESC');
+        const rows = await CustomersService.getAll(req.user);
         return res.json(rows);
     } catch (err) {
         return errRes(res, 'Lỗi khi lấy danh sách khách hàng', err);
     }
 }
 
+async function getById(req, res) {
+    try {
+        const row = await CustomersService.getById(req.params.id, req.user);
+        return res.json(row);
+    } catch (err) {
+        if (err.message === 'CUSTOMER_NOT_FOUND') {
+            return res.status(404).json({ message: 'Không tìm thấy khách hàng' });
+        }
+        if (err.message === 'FORBIDDEN') {
+            return res.status(403).json({ message: 'Không có quyền truy cập thông tin khách hàng này' });
+        }
+        return errRes(res, 'Lỗi khi lấy thông tin khách hàng', err);
+    }
+}
+
 async function create(req, res) {
     try {
-        const { full_name, email, phone, cccd, password } = req.body;
-        const country = getCountryFromPhone(phone);
-        const pass = password || '123456';
-        
-        const [result] = await db.query(
-            'INSERT INTO customers (full_name, email, phone, country, cccd, password, role) VALUES (?, ?, ?, ?, ?, ?, "customer")', 
-            [full_name, email, phone, country, cccd, pass]
-        );
-        
-        return res.json({ success: true, message: 'Thêm khách hàng thành công', id: result.insertId });
+        const result = await CustomersService.create(req.body);
+        return res.json(result);
     } catch (err) {
         return errRes(res, 'Lỗi khi thêm khách hàng', err);
     }
@@ -49,41 +44,34 @@ async function create(req, res) {
 
 async function update(req, res) {
     try {
-        const { full_name, email, phone, cccd, password } = req.body;
-        const country = getCountryFromPhone(phone);
-        
-        let sql = 'UPDATE customers SET full_name = ?, email = ?, phone = ?, country = ?, cccd = ?';
-        let params = [full_name, email, phone, country, cccd];
-        
-        if (password) {
-            sql += ', password = ?';
-            params.push(password);
-        }
-        
-        sql += ' WHERE customer_id = ?';
-        params.push(req.params.id);
-        
-        await db.query(sql, params);
-        return res.json({ success: true, message: 'Cập nhật khách hàng thành công' });
+        const result = await CustomersService.update(req.params.id, req.body, req.user);
+        return res.json(result);
     } catch (err) {
+        if (err.message === 'FORBIDDEN') {
+            return res.status(403).json({ message: 'Không có quyền sửa thông tin này' });
+        }
         return errRes(res, 'Lỗi khi cập nhật khách hàng', err);
     }
 }
 
 async function remove(req, res) {
     try {
-        const [result] = await db.query('DELETE FROM customers WHERE customer_id = ?', [req.params.id]);
-        if (result.affectedRows === 0) {
+        const result = await CustomersService.remove(req.params.id, req.user);
+        return res.json(result);
+    } catch (err) {
+        if (err.message === 'FORBIDDEN') {
+            return res.status(403).json({ message: 'Không có quyền xóa khách hàng' });
+        }
+        if (err.message === 'CUSTOMER_NOT_FOUND') {
             return res.status(404).json({ message: 'Không tìm thấy khách hàng cần xóa' });
         }
-        return res.json({ success: true, message: 'Xóa thông tin khách hàng thành công' });
-    } catch (err) {
         return errRes(res, 'Lỗi khi xóa khách hàng', err);
     }
 }
 
 module.exports = {
     getAll,
+    getById,
     create,
     update,
     remove

@@ -1,18 +1,10 @@
 const router = require('express').Router();
 const { verifyToken, ROLES, requireRole } = require('../middleware/auth');
-
-const employeesController = {
-    getAll: async (req, res) => {
-        const db = require('../config/db');
-        try {
-            const [employees] = await db.query('SELECT employee_id, full_name, username, role FROM employees');
-            res.json(employees);
-        } catch (err) {
-            res.status(500).json({ message: err.message });
-        }
-    }
-};
+const employeesController = require('../controllers/employees.controller');
 
 router.get('/', verifyToken, requireRole(ROLES.ADMIN), employeesController.getAll);
+router.post('/', verifyToken, requireRole(ROLES.ADMIN), employeesController.create);
+router.put('/:id', verifyToken, requireRole(ROLES.ADMIN), employeesController.update);
+router.delete('/:id', verifyToken, requireRole(ROLES.ADMIN), employeesController.remove);
 
 module.exports = router;

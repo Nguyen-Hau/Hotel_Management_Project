@@ -1,22 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 const authMiddleware = require('../middleware/auth');
 const roomsController = require('../controllers/rooms.controller');
-const path = require('path');
-
-// Cấu hình lưu trữ file upload 
-const storage = multer.diskStorage({
-    destination: function (request, file, cb) {
-        cb(null, path.join(__dirname, '../uploads/'));
-    },
-    filename: function (request, file, cb) {
-        // Đặt tên file kèm mốc thời gian để tránh trùng lặp
-        cb(null, Date.now() + '-' + file.originalname);
-    }
-});
-
-const upload = multer({ storage: storage });
+const upload = require('../middleware/upload');
 
 const VIEW_ROLES = authMiddleware.ROLES.STAFF.concat(authMiddleware.ROLES.CUSTOMER);
 
@@ -43,6 +29,5 @@ router.get('/housekeeping/list', authMiddleware.verifyToken, authMiddleware.requ
 router.put('/housekeeping/:id/start', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), roomsController.startCleaning);
 router.put('/housekeeping/:id/finish', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), roomsController.finishCleaning);
 router.put('/housekeeping/:id/confirm', authMiddleware.verifyToken, authMiddleware.requireRole(authMiddleware.ROLES.STAFF), roomsController.confirmCleaned);
-
 
 module.exports = router;
