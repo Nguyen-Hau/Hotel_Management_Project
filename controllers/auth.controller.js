@@ -4,7 +4,7 @@ async function login(request, response) {
     const { username, password } = request.body;
     try {
         const result = await AuthService.login(username, password);
-        return response.json(result);
+        return response.status(200).json(result);
     } catch (err) {
         if (err.message === 'MISSING_USERNAME_PASSWORD') {
             return response.status(400).json({

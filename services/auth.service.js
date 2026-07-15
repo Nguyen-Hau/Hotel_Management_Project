@@ -44,7 +44,12 @@ const AuthService = {
             if (password === employee.password) {
                 const payload = createTokenPayload(employee, "employee");
                 const token = jwt.sign(payload, SECRET_KEY, { expiresIn: "24h" });
-                return { success: true, message: "Đăng nhập thành công (Nhân viên)", token, user: payload };
+                return { 
+                    success: true, 
+                    message: "Đăng nhập thành công (Nhân viên)", 
+                    token, 
+                    user: payload 
+                };
             }
         }
 
@@ -54,7 +59,12 @@ const AuthService = {
             if (password === customer.password) {
                 const payload = createTokenPayload(customer, "customer");
                 const token = jwt.sign(payload, SECRET_KEY, { expiresIn: "24h" });
-                return { success: true, message: "Đăng nhập thành công (Khách hàng)", token, user: payload };
+                return { 
+                    success: true, 
+                    message: "Đăng nhập thành công (Khách hàng)", 
+                    token, 
+                    user: payload 
+                };
             }
         }
 

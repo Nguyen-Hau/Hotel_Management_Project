@@ -47,6 +47,7 @@ const DashboardService = {
             const structure = await DashboardModel.getRevenueStructure();
             stats.roomRevenue = structure ? structure.room : 0;
             stats.serviceRevenue = structure ? structure.service : 0;
+            stats.surchargeRevenue = structure ? structure.surcharge : 0;
 
             const occMonth = await DashboardModel.getOccupancyMonth();
             const listOccupancy = [];

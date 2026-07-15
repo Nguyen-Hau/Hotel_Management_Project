@@ -22,8 +22,8 @@ const RoomsModel = {
         return rooms;
     },
 
-    findById: async (id) => {
-        const [room] = await db.query('SELECT * FROM rooms WHERE room_id = ?', [id]);
+    findById: async (id, conn = db) => {
+        const [room] = await conn.query('SELECT * FROM rooms WHERE room_id = ?', [id]);
         return room[0] || null;
     },
 
@@ -74,8 +74,8 @@ const RoomsModel = {
         return rooms;
     },
 
-    updateStatus: async (id, status) => {
-        return await db.query("UPDATE rooms SET status = ? WHERE room_id = ?", [status, id]);
+    updateStatus: async (id, status, conn = db) => {
+        return await conn.query("UPDATE rooms SET status = ? WHERE room_id = ?", [status, id]);
     }
 };
 

@@ -59,7 +59,8 @@ const DashboardModel = {
         const [rows] = await db.query(
             `SELECT 
                 IFNULL(SUM(room_amount), 0) as room, 
-                IFNULL(SUM(service_amount), 0) as service 
+                IFNULL(SUM(service_amount), 0) as service,
+                IFNULL(SUM(surcharge_checkin_early + surcharge_checkout_late + surcharge_extra_people + surcharge_extra_bed), 0) as surcharge
             FROM invoices WHERE status = 'paid'`
         );
         return rows[0];
